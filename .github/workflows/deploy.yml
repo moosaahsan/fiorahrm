@@ -83,7 +83,7 @@ jobs:
             
             # 1. PEHLE OWNERSHIP THEEK KAREIN (Taqe koi error na aaye)
             # Agar aapka SSH_USER root hai, toh ye lazmi hai
-            chown -R writersplanet:writersplanet .
+            chown -R fiorahotel:fiorahotel .
 
             # 2. Repair vendor
             echo "Repairing/Installing dependencies on server..."
@@ -103,6 +103,6 @@ jobs:
             $PHP_BIN -d memory_limit=512M artisan view:cache
             
             # 5. DUBARA OWNERSHIP (Double check taqe artisan files bhi sahi user ki hon)
-            chown -R writersplanet:writersplanet .
+            chown -R fiorahotel:fiorahotel .
 
             echo "Deployment finished successfully!"
