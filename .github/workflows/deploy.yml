@@ -43,7 +43,6 @@ jobs:
           rsync -avzr --delete \
             --exclude='.git*' \
             --exclude='node_modules' \
-            --exclude='vendor' \
             --exclude='storage/*.key' \
             --exclude='.env' \
             --exclude='public_storage' \
@@ -85,16 +84,13 @@ jobs:
             # Agar aapka SSH_USER root hai, toh ye lazmi hai
             chown -R fiorahotel:fiorahotel .
 
-            # 2. Repair vendor
-            echo "Repairing/Installing dependencies on server..."
-            $PHP_BIN -d memory_limit=512M /usr/local/bin/composer install --no-dev --optimize-autoloader --no-interaction || echo "Composer failed, check logs."
-            
-            # 3. Permissions set karein
+            # 2. Permissions set karein (vendor/ ab GitHub Actions se hi built aur synced aata hai)
             find . -type d -exec chmod 755 {} \;
             find . -type f -exec chmod 644 {} \;
             chmod -R 775 storage bootstrap/cache
-            
-            # 4. Run artisan commands
+
+            # 3. Run artisan commands
+            $PHP_BIN -d memory_limit=512M artisan package:discover --ansi
             $PHP_BIN -d memory_limit=512M artisan optimize:clear
             $PHP_BIN -d memory_limit=512M artisan migrate --force
             $PHP_BIN -d memory_limit=512M artisan storage:link --force
