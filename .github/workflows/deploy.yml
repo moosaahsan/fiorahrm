@@ -1,4 +1,4 @@
-name: Deploy HRM to Namecheap
+name: Deploy Fiora HRM to Hostinger
 
 on:
   push:
