@@ -1,0 +1,6 @@
+/*
+ * Bootstrap 4.3.1 structural primitives — loaded after admin.css (Tailwind + preflight)
+ * so legacy Blade classes (.row, .btn, .modal, .form-control, etc.) and BS4 JS keep working
+ * without the legacy assets/css/bootstrap.min.css link in the layout head.
+ */
+@import 'bootstrap/dist/css/bootstrap.min.css';

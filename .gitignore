@@ -1,0 +1,45 @@
+/node_modules
+/public/build
+/public/hot
+/public/storage
+/storage/*.key
+/storage/pail
+/storage/framework/cache/data/*
+/storage/framework/sessions/*
+/storage/framework/views/*.php
+/storage/logs/*.log
+/vendor
+.env
+.env.backup
+.env.production
+.env_live
+.phpactor.json
+.phpunit.result.cache
+Homestead.json
+Homestead.yaml
+npm-debug.log
+yarn-error.log
+/auth.json
+/.fleet
+/.idea
+/.nova
+/.vscode
+/.vscode/
+/.zed
+
+# Local dev and backup files
+*.sql
+*.rdb
+debug_checkout.php
+test_resp.php
+package_old.json
+vite.config copy.txt
+php/
+redis-cli
+redis-server
+app/**/*Backup*
+app/**/*backup*
+app/**/*copy*
+app/**/* copy*
+app/**/* copy [0-9]*
+app/Http/Controllers/LoginController.php

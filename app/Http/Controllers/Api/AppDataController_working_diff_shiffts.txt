@@ -1,0 +1,420 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Api\BaseController as BaseController;
+
+use Illuminate\Http\Request;
+use App\Models\Employee;
+use App\Services\EmployeeService;
+use Carbon\Carbon;
+use Carbon\CarbonPeriod;
+use App\Models\Attendance;
+use App\Models\LateArrival;
+use App\Models\EmployeeBreak;
+use App\Models\EmployeeShift;
+
+class AppDataController extends BaseController
+{
+    protected $employeeService;
+
+    public function __construct(EmployeeService $employeeService)
+    {
+        $this->employeeService = $employeeService;
+    }
+    // public function refresh(Request $request)
+    // {
+    //     $employeeId = $request->input('employee_id');
+    //     if (!$employeeId) {
+    //         return response()->json(['error' => 'employee_id is required'], 400);
+    //     }
+
+    //     $data = $this->getAppData($employeeId);
+
+    //     if (!$data) {
+    //         return response()->json(['error' => 'Employee data not found or no assigned shift'], 404);
+    //     }
+
+    //     return response()->json($data);
+    // }
+
+    // private function getAppData($employeeId)
+    // {
+    //     $employee = Employee::find($employeeId);
+    //     if (!$employee)
+    //         return null;
+
+    //     $assignedShift = $this->getTodayAssignedShift($employeeId);
+    //     if (!$assignedShift)
+    //         return null;
+
+    //     $getLeaveStats = $this->employeeService->getLeaveStats($employeeId);
+
+    //     $shiftDate = Carbon::parse($assignedShift->shift_date, 'Asia/Karachi')->toDateString();
+
+    //     $attendance = Attendance::where('emp_id', $employeeId)
+    //         ->whereDate('shift_date', $shiftDate)
+    //         ->latest()
+    //         ->first();
+
+    //     $attendanceStatus = $attendance ? 'Checked In' : 'Not Checked In';
+
+    //     $todayStatus = 'Not Checked In';
+    //     $lateThresholdInMinutes = 5;
+    //     $earlyThresholdInMinutes = 60;
+
+    //     if ($attendance && $attendance->check_in) {
+    //         $todayStatus = $this->employeeService->getAttendanceStatus(
+    //             $attendance->check_in,
+    //             $assignedShift->start_time,
+    //             $earlyThresholdInMinutes,
+    //             $lateThresholdInMinutes
+    //         );
+    //     }
+
+    //     $startOfMonth = Carbon::now('Asia/Karachi')->startOfMonth();
+    //     $endOfMonth = Carbon::now('Asia/Karachi');
+
+    //     $workDays = collect(CarbonPeriod::create($startOfMonth, $endOfMonth))
+    //         ->filter(fn($date) => !in_array($date->dayOfWeek, [Carbon::SATURDAY, Carbon::SUNDAY]));
+
+    //     $totalWorkDays = $workDays->count();
+
+    //     $presentAttendances = Attendance::where('emp_id', $employeeId)
+    //         ->where('status', 'Present')
+    //         ->whereBetween('shift_date', [$startOfMonth, $endOfMonth])
+    //         ->get()
+    //         ->filter(fn($a) => !in_array(Carbon::parse($a->shift_date)->dayOfWeek, [Carbon::SATURDAY, Carbon::SUNDAY]));
+
+    //     $presentDays = $presentAttendances->count();
+
+    //     $lateDays = LateArrival::where('emp_id', $employeeId)
+    //         ->whereBetween('date', [$startOfMonth, $endOfMonth])
+    //         ->get()
+    //         ->filter(fn($l) => !in_array(Carbon::parse($l->date)->dayOfWeek, [Carbon::SATURDAY, Carbon::SUNDAY]))
+    //         ->count();
+
+    //     $onTimeDays = max($presentDays - $lateDays, 0);
+
+    //     $onTimePercentage = $presentDays > 0
+    //         ? round(($onTimeDays / $presentDays) * 100)
+    //         : 0;
+
+    //     $attendanceStats = [
+    //         'total_work_days' => $totalWorkDays,
+    //         'present_days' => $presentDays,
+    //         'on_time_days' => $onTimeDays,
+    //         'late_days' => $lateDays,
+    //         'on_time_percentage' => $onTimePercentage,
+    //         'today_status' => $todayStatus,
+    //     ];
+
+    //     // Get break stats & app settings using controller methods (or refactor into services)
+    //     $breakController = new EmployeeBreakController();
+    //     $breakStatsResponse = $breakController->getBreakStats();
+    //     $appSettingsResponse = $breakController->getAppSettings();
+
+    //     $breakStats = $breakStatsResponse->getData();
+    //     $appSettings = $appSettingsResponse->getData();
+
+    //     $ongoingBreak = EmployeeBreak::where('emp_id', $employeeId)
+    //         ->where('status', 'On Break')
+    //         ->first();
+
+    //     return [
+    //         'attendance_status' => $attendanceStatus,
+    //         'assigned_shift' => $assignedShift,
+    //         'leave_stats' => $getLeaveStats,
+    //         'attendance_stats' => $attendanceStats,
+    //         'break_stats' => $breakStats,
+    //         'app_settings' => $appSettings,
+    //         'isOnBreak' => $ongoingBreak ? true : false,
+    //     ];
+    // }
+
+    public function refresh(Request $request)
+    {
+        $employeeId = $request->input('employee_id');
+
+        if (!$employeeId) {
+            return response()->json(['error' => 'employee_id is required'], 400);
+        }
+
+        $data = $this->getAppData($employeeId);
+
+        if (!$data) {
+            return response()->json(['error' => 'Employee data not found or no assigned shift'], 404);
+        }
+
+        return response()->json($data);
+    }
+
+    private function getAppData($employeeId)
+    {
+        $employee = Employee::find($employeeId);
+        if (!$employee) {
+            return null;
+        }
+
+        $employeeShift = EmployeeShift::where('emp_id', $employeeId)->with('shift')->first();
+        if (!$employeeShift || !$employeeShift->shift) {
+            return null;
+        }
+
+        $shiftDate = resolve_shift_date($employeeShift);
+
+        // dd($shiftDate);
+        if (!$shiftDate) {
+            return [
+                'attendance_status' => 'Not Checked In',
+                'assigned_shift' => [
+                    'shift_name' => $employeeShift->shift->shift_name,
+                    'crosses_midnight' => $employeeShift->shift->crosses_midnight,
+                    'start_time' => $employeeShift->shift->start_time,
+                    'end_time' => $employeeShift->shift->end_time ?? null,
+                ],
+                'leave_stats' => get_leave_stats($employee),
+                'attendance_stats' => [
+                    'total_work_days' => 0,
+                    'present_days' => 0,
+                    'on_time_days' => 0,
+                    'late_days' => 0,
+                    'on_time_percentage' => 0,
+                    'today_status' => 'Not Checked In',
+                ],
+                'break_stats' => [],
+                'app_settings' => get_app_settings(),
+                'isOnBreak' => false,
+            ];
+        }
+
+        $attendance = Attendance::where('emp_id', $employeeId)
+            ->where('shift_date', $shiftDate) // keep as plain where
+            ->latest()
+            ->first();
+
+            // dd($attendance);
+
+        $attendanceStatus = $attendance ? 'Checked In' : 'Not Checked In';
+
+        // Today status
+        $todayStatus = 'Not Checked In';
+        $lateThreshold = (int) get_app_settings('late_minutes') ?? 5;
+        $earlyThreshold = 60;
+
+        if ($attendance && $attendance->check_in) {
+            $todayStatus = $this->employeeService->getAttendanceStatus(
+                $attendance->check_in,
+                $employeeShift->shift->start_time,
+                $earlyThreshold,
+                $lateThreshold
+            );
+        }
+
+        // Monthly stats
+        $startOfMonth = Carbon::now('Asia/Karachi')->startOfMonth();
+        $endOfMonth = Carbon::now('Asia/Karachi')->endOfMonth();
+
+        $workDays = collect(CarbonPeriod::create($startOfMonth, $endOfMonth))
+            ->filter(fn($date) => !$date->isWeekend())
+            ->count();
+
+        $presentAttendances = Attendance::where('emp_id', $employeeId)
+            ->where('status', 'Present')
+            ->whereBetween('shift_date', [$startOfMonth, $endOfMonth])
+            ->get()
+            ->filter(fn($a) => !Carbon::parse($a->shift_date)->isWeekend());
+
+        $presentDays = $presentAttendances->count();
+
+        $lateDays = LateArrival::where('emp_id', $employeeId)
+            ->whereBetween('date', [$startOfMonth, $endOfMonth])
+            ->get()
+            ->filter(fn($l) => !Carbon::parse($l->date)->isWeekend())
+            ->count();
+
+        $onTimeDays = max($presentDays - $lateDays, 0);
+        $onTimePercentage = $presentDays > 0 ? round(($onTimeDays / $presentDays) * 100) : 0;
+
+        $attendanceStats = [
+            'total_work_days' => $workDays,
+            'present_days' => $presentDays,
+            'on_time_days' => $onTimeDays,
+            'late_days' => $lateDays,
+            'on_time_percentage' => $onTimePercentage,
+            'today_status' => $todayStatus,
+        ];
+
+        // Break stats (using same controller logic)
+        $breakStats = calculate_break_stats($employee, $employeeShift, $shiftDate);
+
+        // Check ongoing break
+        $ongoingBreak = EmployeeBreak::where('emp_id', $employeeId)
+            ->where('status', 'On Break')
+            ->first();
+
+        return [
+            'attendance_status' => $attendanceStatus,
+            'assigned_shift' => [
+                'shift_name' => $employeeShift->shift->shift_name,
+                'crosses_midnight' => $employeeShift->shift->crosses_midnight,
+                'start_time' => $employeeShift->shift->start_time,
+                'end_time' => $employeeShift->shift->end_time ?? null,
+            ],
+            'leave_stats' => get_leave_stats($employee),
+            'attendance_stats' => $attendanceStats,
+            'break_stats' => $breakStats,
+            'app_settings' => get_app_settings(),
+            'isOnBreak' => $ongoingBreak ? true : false,
+        ];
+    }
+
+    private function resolveShiftDate($assignedShift)
+    {
+        $now = Carbon::now('Asia/Karachi');
+
+        $shiftDate = Carbon::parse($assignedShift->shift_date, 'Asia/Karachi');
+        $shiftStart = Carbon::parse($shiftDate->toDateString() . ' ' . $assignedShift->start_time, 'Asia/Karachi');
+        $shiftEnd = Carbon::parse($shiftDate->toDateString() . ' ' . $assignedShift->end_time, 'Asia/Karachi');
+
+        if ($assignedShift->crosses_midnight && $shiftEnd->lt($shiftStart)) {
+            $shiftEnd->addDay();
+        }
+
+        if ($now->between($shiftStart, $shiftEnd)) {
+            return $shiftDate->toDateString();
+        }
+
+        if ($assignedShift->crosses_midnight) {
+            $yesterday = $shiftDate->copy()->subDay();
+            $yesterdayStart = Carbon::parse($yesterday->toDateString() . ' ' . $assignedShift->start_time, 'Asia/Karachi');
+            $yesterdayEnd = Carbon::parse($yesterday->toDateString() . ' ' . $assignedShift->end_time, 'Asia/Karachi');
+
+            if ($yesterdayEnd->lt($yesterdayStart)) {
+                $yesterdayEnd->addDay();
+            }
+
+            if ($now->between($yesterdayStart, $yesterdayEnd)) {
+                return $yesterday->toDateString();
+            }
+        }
+
+        return null;
+    }
+
+
+
+    /**
+     * Fetch and format app data for the given employee.
+     *
+     * @param int $employeeId
+     * @return array|null
+     */
+    // private function getAppData($employeeId)
+    // {
+    //     // Fetch employee
+    //     $employee = Employee::find($employeeId);
+    //     if (!$employee) {
+    //         return null;
+    //     }
+
+    //     // Fetch today's assigned shift
+    //     $assignedShift = $this->getTodayAssignedShift($employeeId);
+    //     if (!$assignedShift) {
+    //         return null;
+    //     }
+
+    //     // Parse shift date in Asia/Karachi timezone
+    //     $shiftDate = Carbon::parse($assignedShift->shift_date, 'Asia/Karachi')->toDateString();
+
+    //     // Fetch today's attendance
+    //     $attendance = Attendance::where('emp_id', $employeeId)
+    //         ->whereDate('shift_date', $shiftDate)
+    //         ->latest()
+    //         ->first();
+
+    //     // Set attendance status
+    //     $attendanceStatus = $attendance ? 'Checked In' : 'Not Checked In';
+
+    //     // Calculate today's status (On Time, Late, etc.)
+    //     $todayStatus = 'Not Checked In';
+    //     $lateThresholdInMinutes = 5;
+    //     $earlyThresholdInMinutes = 60;
+
+    //     if ($attendance && $attendance->check_in) {
+    //         $todayStatus = $this->employeeService->getAttendanceStatus(
+    //             $attendance->check_in,
+    //             $assignedShift->start_time,
+    //             $earlyThresholdInMinutes,
+    //             $lateThresholdInMinutes
+    //         );
+    //     }
+
+    //     // Calculate attendance stats for the month
+    //     $startOfMonth = Carbon::now('Asia/Karachi')->startOfMonth();
+    //     $endOfMonth = Carbon::now('Asia/Karachi')->endOfMonth();
+
+    //     $workDays = collect(CarbonPeriod::create($startOfMonth, $endOfMonth))
+    //         ->filter(fn($date) => !$date->isWeekend()) // Exclude Saturday/Sunday
+    //         ->count();
+
+    //     $presentAttendances = Attendance::where('emp_id', $employeeId)
+    //         ->where('status', 'Present')
+    //         ->whereBetween('shift_date', [$startOfMonth, $endOfMonth])
+    //         ->get()
+    //         ->filter(fn($a) => !Carbon::parse($a->shift_date)->isWeekend());
+
+    //     $presentDays = $presentAttendances->count();
+
+    //     $lateDays = LateArrival::where('emp_id', $employeeId)
+    //         ->whereBetween('date', [$startOfMonth, $endOfMonth])
+    //         ->get()
+    //         ->filter(fn($l) => !Carbon::parse($l->date)->isWeekend())
+    //         ->count();
+
+    //     $onTimeDays = max($presentDays - $lateDays, 0);
+    //     $onTimePercentage = $presentDays > 0 ? round(($onTimeDays / $presentDays) * 100) : 0;
+
+    //     $attendanceStats = [
+    //         'total_work_days' => $workDays,
+    //         'present_days' => $presentDays,
+    //         'on_time_days' => $onTimeDays,
+    //         'late_days' => $lateDays,
+    //         'on_time_percentage' => $onTimePercentage,
+    //         'today_status' => $todayStatus,
+    //     ];
+
+    //     // Fetch break stats and app settings
+    //     $breakController = new EmployeeBreakController();
+    //     $breakStatsResponse = $breakController->getBreakStats();
+    //     $appSettingsResponse = $breakController->getAppSettings();
+
+    //     $breakStats = $breakStatsResponse->getData(true); // Convert to array
+    //     $appSettings = $appSettingsResponse->getData(true); // Convert to array
+
+    //     // Check for ongoing break
+    //     $ongoingBreak = EmployeeBreak::where('emp_id', $employeeId)
+    //         ->where('status', 'On Break')
+    //         ->first();
+
+    //     // Fetch leave stats
+    //     $leaveStats = $this->employeeService->getLeaveStats($employeeId);
+
+    //     // Return data in camelCase to match frontend
+    //     return [
+    //         'attendance_status' => $attendanceStatus,
+    //         'assigned_shift' => [
+    //             'shift_name' => $assignedShift->shift_name,
+    //             'crosses_midnight' => $assignedShift->crosses_midnight,
+    //             'start_time' => $assignedShift->start_time,
+    //             'end_time' => $assignedShift->end_time ?? null,
+    //         ],
+    //         'leave_stats' => $leaveStats,
+    //         'attendance_stats' => $attendanceStats,
+    //         'break_stats' => $breakStats,
+    //         'app_settings' => $appSettings,
+    //         'isOnBreak' => $ongoingBreak ? true : false,
+    //     ];
+    // }
+
+}
