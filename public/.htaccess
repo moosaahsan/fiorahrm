@@ -1,9 +1,3 @@
-# Final Enterprise .htaccess for Namecheap/cPanel
-# Force PHP 8.2 (Litespeed compatible)
-<IfModule mime_module>
-  AddHandler application/x-httpd-ea-php82___lsphp .php .php8 .phtml
-</IfModule>
-
 Options +FollowSymLinks -Indexes
 
 <IfModule mod_rewrite.c>
