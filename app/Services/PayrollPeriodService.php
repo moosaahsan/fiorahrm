@@ -18,8 +18,9 @@ class PayrollPeriodService
 
     /**
      * Get the payroll period for a specific target month.
-     * For example, forMonth(2026, 7) returns June 21, 2026 to July 20, 2026.
-     * 
+     * The payroll cycle follows the natural calendar month, so
+     * forMonth(2026, 7) returns July 1, 2026 to July 31, 2026.
+     *
      * @param int $year
      * @param int $month
      * @return array ['start' => Carbon, 'end' => Carbon, 'payroll_month' => int, 'payroll_year' => int]
@@ -27,10 +28,10 @@ class PayrollPeriodService
     public static function forMonth(int $year, int $month): array
     {
         $targetDate = Carbon::createFromDate($year, $month, 1);
-        
-        $start = $targetDate->copy()->subMonthNoOverflow()->startOfMonth()->addDays(20)->startOfDay(); // E.g. June 21
-        $end = $targetDate->copy()->startOfMonth()->addDays(19)->endOfDay(); // E.g. July 20
-        
+
+        $start = $targetDate->copy()->startOfMonth()->startOfDay(); // E.g. July 1
+        $end = $targetDate->copy()->endOfMonth()->endOfDay();       // E.g. July 31 (or 28/29/30)
+
         return [
             'start' => $start,
             'end' => $end,
@@ -41,25 +42,13 @@ class PayrollPeriodService
 
     /**
      * Given an arbitrary date, determines which payroll month it belongs to.
-     * 
+     * With calendar-month cycles a date always belongs to its own month.
+     *
      * @param Carbon $date
      * @return array ['start' => Carbon, 'end' => Carbon, 'payroll_month' => int, 'payroll_year' => int]
      */
     public static function getPeriodForDate(Carbon $date): array
     {
-        $day = $date->day;
-        
-        if ($day >= 21) {
-            // It belongs to the *next* calendar month's payroll
-            $payrollMonthDate = $date->copy()->addMonthNoOverflow();
-            $year = $payrollMonthDate->year;
-            $month = $payrollMonthDate->month;
-        } else {
-            // It belongs to the *current* calendar month's payroll
-            $year = $date->year;
-            $month = $date->month;
-        }
-        
-        return self::forMonth($year, $month);
+        return self::forMonth($date->year, $date->month);
     }
 }

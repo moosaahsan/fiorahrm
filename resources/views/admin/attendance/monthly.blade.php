@@ -369,12 +369,10 @@
                 const year = parseInt($('#year').val(), 10);
                 const month = parseInt($('#month').val(), 10);
                 
-                // End date is 20th of the selected month
-                const endMoment = moment(new Date(year, month - 1, 20));
-                
-                // Start date is 21st of the previous month
-                const startMoment = moment(new Date(year, month - 2, 21));
-                
+                // Payroll cycle follows the calendar month: 1st to last day
+                const startMoment = moment(new Date(year, month - 1, 1));
+                const endMoment = moment(new Date(year, month - 1, 1)).endOf('month');
+
                 const start = startMoment.format('YYYY-MM-DD');
                 const end = endMoment.format('YYYY-MM-DD');
                 return { start, end };
