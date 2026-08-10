@@ -251,6 +251,30 @@ Route::middleware(['auth', 'is_admin'])->prefix('admin')->group(function () {
         Route::get('/leave-adjustments/data', [\App\Http\Controllers\Admin\LeaveAdjustmentController::class, 'data'])->name('admin.leave_adjustments.data');
     });
 
+    // Compensatory Leave (earned by working public holidays)
+    Route::middleware('permission:view-compensatory-leaves')->group(function () {
+        Route::get('/compensatory-leaves', [\App\Http\Controllers\Admin\CompensatoryLeaveController::class, 'index'])->name('admin.compensatory_leaves.index');
+        Route::get('/compensatory-leaves/data', [\App\Http\Controllers\Admin\CompensatoryLeaveController::class, 'data'])->name('admin.compensatory_leaves.data');
+    });
+
+    Route::middleware('permission:manage-compensatory-leaves')->group(function () {
+        Route::post('/compensatory-leaves', [\App\Http\Controllers\Admin\CompensatoryLeaveController::class, 'store'])->name('admin.compensatory_leaves.store');
+        Route::post('/compensatory-leaves/{id}/approve', [\App\Http\Controllers\Admin\CompensatoryLeaveController::class, 'approve'])->name('admin.compensatory_leaves.approve');
+        Route::post('/compensatory-leaves/{id}/reject', [\App\Http\Controllers\Admin\CompensatoryLeaveController::class, 'reject'])->name('admin.compensatory_leaves.reject');
+    });
+
+    // Year-end leave encashment
+    Route::middleware('permission:view-leave-cashouts')->group(function () {
+        Route::get('/leave-cashouts', [\App\Http\Controllers\Admin\LeaveCashoutController::class, 'index'])->name('admin.leave_cashouts.index');
+        Route::get('/leave-cashouts/data', [\App\Http\Controllers\Admin\LeaveCashoutController::class, 'data'])->name('admin.leave_cashouts.data');
+        Route::get('/leave-cashouts/balances', [\App\Http\Controllers\Admin\LeaveCashoutController::class, 'balances'])->name('admin.leave_cashouts.balances');
+    });
+
+    Route::middleware('permission:manage-leave-cashouts')->group(function () {
+        Route::post('/leave-cashouts', [\App\Http\Controllers\Admin\LeaveCashoutController::class, 'store'])->name('admin.leave_cashouts.store');
+        Route::post('/leave-cashouts/{id}/cancel', [\App\Http\Controllers\Admin\LeaveCashoutController::class, 'cancel'])->name('admin.leave_cashouts.cancel');
+    });
+
     // Profile
     Route::get('/profile', [ProfileController::class, 'edit'])->name('admin.profile.edit');
     Route::post('/profile', [ProfileController::class, 'update'])->name('admin.profile.update');

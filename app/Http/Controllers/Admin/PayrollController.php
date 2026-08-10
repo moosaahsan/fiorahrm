@@ -81,7 +81,14 @@ class PayrollController extends Controller
             
             $employeeIds = $employees->pluck('id')->toArray();
             $batchCalculations = $this->calculator->calculateBatchPayroll($employeeIds, $request->month, $request->year);
-            
+
+            $cashoutsByEmployee = \App\Services\LeaveCashoutService::payableFor(
+                (int) $request->month,
+                (int) $request->year,
+                $employeeIds
+            );
+
+
             $totalGross = 0;
             $totalDeduction = 0;
             $totalNet = 0;
@@ -90,7 +97,7 @@ class PayrollController extends Controller
                 $calc = $batchCalculations[$employee->id] ?? null;
                 if (!$calc) continue;
                 
-                PayrollItem::create([
+                $payrollItem = PayrollItem::create([
                     'payroll_id' => $payroll->id,
                     'employee_id' => $employee->id,
                     'gross_salary' => $calc['gross_salary'],
@@ -99,6 +106,11 @@ class PayrollController extends Controller
                     'earnings_detail' => $calc['earnings_detail'],
                     'deductions_detail' => $calc['deductions_detail'],
                 ]);
+
+                // Any leave encashment carried by this run is now settled.
+                foreach ($cashoutsByEmployee->get($employee->id, collect()) as $cashout) {
+                    \App\Services\LeaveCashoutService::markPaid($cashout, $payrollItem->id);
+                }
 
                 $totalGross += $calc['gross_salary'];
                 $totalDeduction += $calc['total_deductions'];

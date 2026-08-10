@@ -32,7 +32,30 @@ class Leave extends Model
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'is_balance_deducted' => 'boolean',
     ];
+
+    /**
+     * How many days this leave covers, counting a half day as 0.5.
+     *
+     * There is no stored total_days column — the span is derived from the dates
+     * and the day type, the same rule LeaveObserver uses to move balances.
+     */
+    public function durationInDays(): float
+    {
+        if (! $this->start_date || ! $this->end_date) {
+            return 0.0;
+        }
+
+        $days = \Carbon\Carbon::parse($this->start_date)
+            ->diffInDays(\Carbon\Carbon::parse($this->end_date)) + 1;
+
+        if (in_array($this->day_type, ['first_half', 'second_half', 'half_day'], true)) {
+            $days = $days / 2;
+        }
+
+        return (float) $days;
+    }
 
     public function branch()
     {

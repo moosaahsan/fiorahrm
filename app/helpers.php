@@ -226,8 +226,11 @@ if (!function_exists('compute_leave_stats')) {
 
                 } else {
                     // Full day leave
-                    // Count weekdays only (skip weekends and holidays)
-                    $days = $start->diffInDaysFiltered(fn($date) => !$date->isWeekend() && !\App\Models\CompanyOffDay::isOffDay($date, 'Holiday', $employee->team_id ?? null), $end) + 1;
+                    // Count working days only (configured off days don't consume leave)
+                    $days = $start->diffInDaysFiltered(
+                        fn($date) => \App\Services\WorkingDayService::isWorkingDayForEmployee($date, $employee),
+                        $end
+                    ) + 1;
 
                     // Add to Year
                     $stats[$category]['year']['full'] += $days;
@@ -927,17 +930,19 @@ if (!function_exists('get_attendance_statsold')) {
         $startOfMonth = $period['start']->copy();
         $endOfMonth = $period['end']->copy();
 
-        // Count total working days excluding weekends
+        $employee = \App\Models\Employee::find($employeeId);
+
+        // Count total working days (configured off days excluded)
         $workDays = collect(CarbonPeriod::create($startOfMonth, $endOfMonth))
-            ->filter(fn($date) => !$date->isWeekend())
+            ->filter(fn($date) => \App\Services\WorkingDayService::isWorkingDayForEmployee($date, $employee))
             ->count();
 
-        // Present attendances excluding weekends
+        // Present attendances on working days
         $presentAttendances = \App\Models\Attendance::where('emp_id', $employeeId)
             ->where('status', 'Present')
             ->whereBetween('shift_date', [$startOfMonth, $endOfMonth])
             ->get()
-            ->filter(fn($a) => !Carbon::parse($a->shift_date)->isWeekend());
+            ->filter(fn($a) => \App\Services\WorkingDayService::isWorkingDayForEmployee($a->shift_date, $employee));
 
         $presentDays = $presentAttendances->count();
 
@@ -945,7 +950,7 @@ if (!function_exists('get_attendance_statsold')) {
         $lateDays = \App\Models\LateArrival::where('emp_id', $employeeId)
             ->whereBetween('date', [$startOfMonth, $endOfMonth])
             ->get()
-            ->filter(fn($l) => !Carbon::parse($l->date)->isWeekend())
+            ->filter(fn($l) => \App\Services\WorkingDayService::isWorkingDayForEmployee($l->date, $employee))
             ->count();
 
         // Derived stats
@@ -1100,8 +1105,8 @@ if (!function_exists('get_attendance_stats')) {
                     }
                 }
 
-                $isWorkDay = function ($date) use ($holidayDates) {
-                    return ! $date->isWeekend()
+                $isWorkDay = function ($date) use ($holidayDates, $employee) {
+                    return \App\Services\WorkingDayService::isWorkingDayForEmployee($date, $employee)
                         && ! isset($holidayDates[$date->toDateString()]);
                 };
 
@@ -1171,7 +1176,7 @@ if (!function_exists('get_attendance_stats')) {
                 $lateDaysYearly = \App\Models\LateArrival::where('emp_id', $employeeId)
                     ->whereYear('date', $now->year)
                     ->get()
-                    ->filter(fn ($l) => ! \Carbon\Carbon::parse($l->date)->isWeekend())
+                    ->filter(fn ($l) => \App\Services\WorkingDayService::isWorkingDayForEmployee($l->date, $employee))
                     ->count();
 
                 $onTimeDays = max($presentDays - $lateDays, 0);

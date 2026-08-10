@@ -173,8 +173,9 @@ class ImportAttendanceController extends Controller
                 continue;
             }
 
-            // Skip Weekends automatically so the system naturally displays "Weekend"
-            if (Carbon::parse($shiftDate)->isWeekend()) {
+            // Skip configured off days so the system naturally displays them as off.
+            // Sat/Sun are working days unless configured otherwise.
+            if (\App\Services\WorkingDayService::isOffDay($shiftDate)) {
                 $skippedCount++;
                 continue;
             }

@@ -23,7 +23,7 @@ trait ScopesData
             'employees', 'departments', 'teams', 'shifts',
             'attendances', 'leaves', 'leave_balances',
             'company_off_days', 'late_arrivals', 'employee_breaks',
-            'salary_structures', 'payrolls',
+            'salary_structures', 'payrolls', 'compensatory_leaves',
         ];
         $hasBranchId = in_array($table, $branchAwareTables);
 
@@ -31,7 +31,7 @@ trait ScopesData
         $personnelTables = [
             'employees', 'attendances', 'leaves', 'leave_balances',
             'employee_shifts', 'employee_breaks', 'late_arrivals', 'screenshots', 'half_days',
-            'payroll_items',
+            'payroll_items', 'compensatory_leaves',
         ];
 
         $employeeIdColumn = 'id';
@@ -42,6 +42,7 @@ trait ScopesData
             'leaves' => 'employee_id',
             'leave_balances' => 'employee_id',
             'payroll_items' => 'employee_id',
+            'compensatory_leaves' => 'employee_id',
         ];
         if (isset($specialColumns[$table])) {
             $employeeIdColumn = $specialColumns[$table];

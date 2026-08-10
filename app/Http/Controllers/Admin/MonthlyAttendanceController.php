@@ -210,8 +210,8 @@ class MonthlyAttendanceController extends Controller
 
                 if ($offDay) return $offDay->type === 'Holiday' ? 'H' : 'O';
 
-                // Weekend?
-                if ($date->isWeekend()) return 'O';
+                // Recurring weekly off? (none by default — a hotel works every day)
+                if (\App\Services\WorkingDayService::isWeeklyOffDay($date)) return 'O';
 
                 // Exceptions / Future / Absent
                 if ($employee->joining_date && $date->lt(Carbon::parse($employee->joining_date)->startOfDay())) return 'EX';

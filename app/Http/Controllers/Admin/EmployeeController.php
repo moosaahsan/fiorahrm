@@ -434,18 +434,8 @@ class EmployeeController extends Controller
                 ]);
             }
 
-            // Assign default 16 Annual Leaves
-            $annualLeave = \App\Models\LeaveType::where('name', 'like', '%Annual%')->first();
-            if ($annualLeave) {
-                \App\Models\LeaveBalance::create([
-                    'employee_id' => $employee->id,
-                    'leave_type' => $annualLeave->slug,
-                    'year' => date('Y'),
-                    'allocated' => 16,
-                    'used' => 0,
-                    'remaining' => 16,
-                ]);
-            }
+            // Leave balances are allocated by LeaveService via the EmployeeObserver,
+            // driven by leave_types.max_days and the eligibility waiting period.
 
             // Log activity
             ActivityLogger::log(

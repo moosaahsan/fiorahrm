@@ -79,7 +79,7 @@ class EmployeeDashboardController extends Controller
         $halfDayCount = $monthlyAttendances->filter(fn($att) => $att->halfDay)->count();
         
         $workDaysInMonth = collect(CarbonPeriod::create($period['start'], $period['end']))
-            ->filter(fn($date) => !$date->isWeekend() && !$date->isFuture())
+            ->filter(fn($date) => \App\Services\WorkingDayService::isWorkingDayForEmployee($date, $employee) && !$date->isFuture())
             ->count();
 
         // Weekly attendance data for chart (last 4 weeks)

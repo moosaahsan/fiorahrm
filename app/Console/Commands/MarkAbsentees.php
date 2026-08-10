@@ -76,8 +76,9 @@ class MarkAbsentees extends Command
                 // Lets keep it simple: If it's more than 24 hours past shift END, we might ignore or still mark?
                 // For now, we process it.
 
-                // 4. Check Weekends
-                if ($currentDate->isSaturday() || $currentDate->isSunday()) {
+                // 4. Skip configured off days — there is no fixed weekend, so a
+                // Saturday or Sunday is a normal working day unless configured otherwise.
+                if (\App\Services\WorkingDayService::isOffDayForEmployee($currentDate, $employee)) {
                     continue;
                 }
 

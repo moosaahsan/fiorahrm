@@ -37,19 +37,13 @@ class PerformanceScoreCalculator
         
         $limitDate = $endDate->lt(now($timezone)) ? $endDate : now($timezone);
 
-        // 2. Scheduled Working Days (Excluding Weekends and Holidays)
-        $totalWorkingDays = 0;
-        $period = CarbonPeriod::create($startDate->toDateString(), $limitDate->toDateString());
-        
-        foreach ($period as $date) {
-            if ($date->isWeekend()) {
-                continue;
-            }
-            if (CompanyOffDay::isOffDay($date, null, $employee->team_id)) {
-                continue;
-            }
-            $totalWorkingDays++;
-        }
+        // 2. Scheduled Working Days (excluding configured off days)
+        $totalWorkingDays = WorkingDayService::countWorkingDays(
+            $startDate->toDateString(),
+            $limitDate->toDateString(),
+            $employee->team_id,
+            $employee->branch_id
+        );
 
         // 3. Attendance Scored
         // Get Present Days

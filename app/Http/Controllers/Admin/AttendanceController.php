@@ -172,8 +172,11 @@ class AttendanceController extends Controller
             
             for ($date = $startDate->copy(); $date->lte($endDate); $date->addDay()) {
                 $curDateStr = $date->toDateString();
-                $isWeekend = $date->isWeekend();
-                
+                // "Weekend" here means a configured recurring weekly off — a hotel
+                // has none by default, so Sat/Sun are ordinary working days.
+                // One-off holidays are resolved separately via $allOffDaysForRows.
+                $isWeekend = \App\Services\WorkingDayService::isWeeklyOffDay($date);
+
                 if ($emp->joining_date && $date->lt(\Carbon\Carbon::parse($emp->joining_date)->startOfDay())) {
                     continue;
                 }
@@ -272,7 +275,7 @@ class AttendanceController extends Controller
                 $shiftDateStr = is_string($r->shift_date) ? $r->shift_date : $r->shift_date->format('Y-m-d');
                 $teamId = $r->employee->team_id ?? (is_object($r) && isset($r->team_id) ? $r->team_id : null);
                 
-                $isWeekend = isset($r->is_weekend) ? $r->is_weekend : \Carbon\Carbon::parse($shiftDateStr)->isWeekend();
+                $isWeekend = isset($r->is_weekend) ? $r->is_weekend : \App\Services\WorkingDayService::isWeeklyOffDay($shiftDateStr);
                 $offDay = $allOffDaysForRows->first(function($o) use ($shiftDateStr, $teamId) {
                     $applies = $shiftDateStr >= $o->start_date->format('Y-m-d') && $shiftDateStr <= $o->end_date->format('Y-m-d');
                     if (!$applies) return false;
@@ -401,7 +404,7 @@ class AttendanceController extends Controller
                 $totWorkedMinutes += calculate_net_minutes($r, $timezone, $now);
             } else {
                 $teamId = $r->employee->team_id ?? (is_object($r) && isset($r->team_id) ? $r->team_id : null);
-                $isWeekend = isset($r->is_weekend) ? $r->is_weekend : \Carbon\Carbon::parse($shiftDateStr)->isWeekend();
+                $isWeekend = isset($r->is_weekend) ? $r->is_weekend : \App\Services\WorkingDayService::isWeeklyOffDay($shiftDateStr);
                 
                 $offDay = $allOffDaysForRows->first(function($o) use ($shiftDateStr, $teamId) {
                     $applies = $shiftDateStr >= $o->start_date->format('Y-m-d') && $shiftDateStr <= $o->end_date->format('Y-m-d');
@@ -585,7 +588,7 @@ class AttendanceController extends Controller
                     }
                     
                     // Check for weekend
-                    $isWeekend = isset($r->is_weekend) ? $r->is_weekend : \Carbon\Carbon::parse($shiftDateStr)->isWeekend();
+                    $isWeekend = isset($r->is_weekend) ? $r->is_weekend : \App\Services\WorkingDayService::isWeeklyOffDay($shiftDateStr);
                     if ($isWeekend) {
                         return '<span class="saas-status-badge offday"><i class="fas fa-calendar-week mr-1"></i>Weekend</span>';
                     }

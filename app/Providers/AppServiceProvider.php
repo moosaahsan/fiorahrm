@@ -12,6 +12,8 @@ use Carbon\Carbon;
 use App\Models\Employee;
 use App\Models\EmployeeBreak;
 use App\Models\EmployeeShift;
+use App\Models\Attendance;
+use App\Observers\AttendanceObserver;
 use App\Observers\EmployeeObserver;
 use App\Observers\LeaveObserver;
 use App\Models\Leave;
@@ -51,6 +53,7 @@ class AppServiceProvider extends ServiceProvider
         Blade::component('components.pagination', 'pagination');
         Employee::observe(EmployeeObserver::class);
         Leave::observe(LeaveObserver::class);
+        Attendance::observe(AttendanceObserver::class);
 
         /* ───── Share break requests count with sidebar ─────────────── */
         View::composer('admin.layouts.sidebar', function ($view) {
@@ -74,10 +77,15 @@ class AppServiceProvider extends ServiceProvider
                 ->whereDate('date', $today)
                 ->count();
 
+            $pendingCplCount = Schema::hasTable('compensatory_leaves')
+                ? \App\Models\CompensatoryLeave::accessible()->pending()->count()
+                : 0;
+
             $view->with([
                 'breakRequestsCount' => $breakRequestsCount,
                 'pendingLeavesCount' => $pendingLeavesCount,
                 'lateArrivalsCount' => $lateArrivalsCount,
+                'pendingCplCount' => $pendingCplCount,
             ]);
         });
 

@@ -49,6 +49,24 @@ Schedule::command('leaves:process-monthly-policies')
         Log::error('ProcessMonthlyLeavePolicies FAILED', ['time' => now()->toDateTimeString()]);
     });
 
+// Catches holiday work that the AttendanceObserver missed — e.g. a holiday
+// configured after the attendance was already entered.
+Schedule::command('cpl:scan')
+    ->dailyAt('00:30')
+    ->withoutOverlapping(30)
+    ->onFailure(function () {
+        Log::error('ScanCompensatoryLeave failed', ['time' => now()->toDateTimeString()]);
+    });
+
+// Unlocks entitlement once the eligibility waiting period completes, and rolls
+// balances over into a new calendar year. Idempotent, so a daily run is cheap.
+Schedule::command('leaves:sync-balances')
+    ->dailyAt('00:20')
+    ->withoutOverlapping(30)
+    ->onFailure(function () {
+        Log::error('SyncLeaveBalances failed', ['time' => now()->toDateTimeString()]);
+    });
+
 Schedule::command(ReactivateSuspendedEmployees::class)
     ->dailyAt('00:10')
     ->withoutOverlapping(30);

@@ -149,9 +149,12 @@ class EmployeeAttendanceController extends Controller
 
         // 2. Summary Stats
         $limitDate = $endDate->lt(now($tz)) ? $endDate : now($tz);
-        $totalWorkDays = collect(\Carbon\CarbonPeriod::create($startDate, $limitDate))
-            ->filter(fn($date) => !$date->isWeekend())
-            ->count();
+        $totalWorkDays = \App\Services\WorkingDayService::countWorkingDays(
+            $startDate,
+            $limitDate,
+            $employee->team_id ?? null,
+            $employee->branch_id ?? null
+        );
 
         $presentDays = $attendances->where('status', 'Present')->count();
         $lateDays = $attendances->filter(fn($a) => $a->lateArrival)->count();
@@ -452,7 +455,7 @@ class EmployeeAttendanceController extends Controller
                 $row[$key] = employee_status_by_shift_date($employeeId, $date->toDateString());
             } elseif (isset($leaveMap[$key])) {
                 $row[$key] = 'L';
-            } elseif ($date->format('l') === 'Saturday' || $date->format('l') === 'Sunday') {
+            } elseif (\App\Services\WorkingDayService::isOffDayForEmployee($date, $employee)) {
                 $row[$key] = 'O';
             } elseif ($date->isFuture()) {
                 $row[$key] = 'U';

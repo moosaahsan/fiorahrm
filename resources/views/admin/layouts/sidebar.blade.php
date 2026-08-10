@@ -213,6 +213,30 @@
                     </li>
                 @endcan
 
+                @can('view-compensatory-leaves')
+                    <li>
+                        <a href="{{ route('admin.compensatory_leaves.index') }}"
+                            class="waves-effect {{ request()->is('admin/compensatory-leaves*') ? 'mm active' : '' }}">
+                            <i class="mdi mdi-calendar-heart"></i>
+                            <span>
+                                @if(($pendingCplCount ?? 0) > 0)
+                                    <span class="tw-badge-danger float-right">{{ $pendingCplCount }}</span>
+                                @endif
+                                Compensatory Leave
+                            </span>
+                        </a>
+                    </li>
+                @endcan
+
+                @can('view-leave-cashouts')
+                    <li>
+                        <a href="{{ route('admin.leave_cashouts.index') }}"
+                            class="waves-effect {{ request()->is('admin/leave-cashouts*') ? 'mm active' : '' }}">
+                            <i class="mdi mdi-cash-multiple"></i> <span> Leave Encashment </span>
+                        </a>
+                    </li>
+                @endcan
+
                 @can('view-leave-adjustments')
                     <li>
                         <a href="{{ route('admin.leave_adjustments.index') }}"

@@ -71,7 +71,7 @@ class PerformanceEvaluationTest extends TestCase
         
         $current = $startDate->copy();
         while ($current <= $limitDate) {
-            if (!$current->isWeekend()) {
+            if (\App\Services\WorkingDayService::isWorkingDay($current)) {
                 Attendance::create([
                     'emp_id' => $this->employee->id,
                     'shift_date' => $current->toDateString(),
@@ -102,7 +102,7 @@ class PerformanceEvaluationTest extends TestCase
         $month = Carbon::now()->month;
         $targetDate = Carbon::create($year, $month, 5, 0, 0, 0);
         
-        if ($targetDate->isWeekend()) {
+        if (\App\Services\WorkingDayService::isOffDay($targetDate)) {
             $targetDate->subDays(2);
         }
 

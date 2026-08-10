@@ -19,6 +19,9 @@ class PermissionSeeder extends Seeder
         // ──────────────────────────────────────────────────────
 
         $permissions = [
+            // Core
+            'access-admin-panel',
+
             // Employees Module (Granular)
             'view-employee',
             'create-employee',
@@ -59,12 +62,28 @@ class PermissionSeeder extends Seeder
             'approve-break',
             'reject-break',
             'checkout-employee',
+            'add-manual-attendance',
+            'edit-attendance-logs',
             'view-leaves',
             'create-leave',
             'approve-leave',
             'reject-leave',
             'view-leave-adjustments',
             'manage-leave-adjustments',
+            'view-compensatory-leaves',
+            'manage-compensatory-leaves',
+            'view-leave-cashouts',
+            'manage-leave-cashouts',
+
+            // Payroll Module
+            'view-payroll',
+            'generate-payroll',
+            'approve-payroll',
+
+            // Performance Module
+            'view-performance-evaluation',
+            'manage-performance-evaluation',
+            'view-own-performance',
 
             // CRM Module
             'view-leads',
@@ -103,6 +122,11 @@ class PermissionSeeder extends Seeder
         Permission::where('name', 'offboard-employee')->update(['module' => 'Employees']);
         Permission::where('name', 'manage-leave-balances')->update(['module' => 'Leaves']);
         Permission::where('name', 'checkout-employee')->update(['module' => 'Attendance']);
+        Permission::whereIn('name', ['add-manual-attendance', 'edit-attendance-logs'])->update(['module' => 'Attendance']);
+        Permission::whereIn('name', ['view-payroll', 'generate-payroll', 'approve-payroll'])->update(['module' => 'Payroll']);
+        Permission::whereIn('name', ['view-performance-evaluation', 'manage-performance-evaluation', 'view-own-performance'])->update(['module' => 'Performance']);
+        Permission::whereIn('name', ['view-compensatory-leaves', 'manage-compensatory-leaves'])->update(['module' => 'Leaves']);
+        Permission::whereIn('name', ['view-leave-cashouts', 'manage-leave-cashouts'])->update(['module' => 'Leaves']);
 
         // ──────────────────────────────────────────────────────
         // 2. CREATE ROLES & ASSIGN DEFAULT PERMISSIONS
@@ -121,6 +145,12 @@ class PermissionSeeder extends Seeder
         // Manager — operational control
         $manager = Role::firstOrCreate(['name' => 'manager', 'guard_name' => 'web']);
         $manager->syncPermissions([
+            'access-admin-panel',
+            'add-manual-attendance',
+            'edit-attendance-logs',
+            'view-payroll',
+            'view-performance-evaluation',
+            'manage-performance-evaluation',
             'view-employee',
             'create-employee',
             'edit-employee',
@@ -160,6 +190,10 @@ class PermissionSeeder extends Seeder
             'approve-leave',
             'reject-leave',
             'view-leave-adjustments',
+            'view-compensatory-leaves',
+            'manage-compensatory-leaves',
+            'view-leave-cashouts',
+            'manage-leave-cashouts',
             'view-holidays',
             'create-holiday',
             'edit-holiday',
@@ -177,6 +211,8 @@ class PermissionSeeder extends Seeder
         // Team Lead — team-level visibility & management
         $teamLead = Role::firstOrCreate(['name' => 'team-lead', 'guard_name' => 'web']);
         $teamLead->syncPermissions([
+            'access-admin-panel',
+            'view-performance-evaluation',
             'view-employee',
             'view-teams',
             'view-team-attendance',
@@ -193,6 +229,7 @@ class PermissionSeeder extends Seeder
             'create-leave',
             'approve-leave',
             'reject-leave',
+            'view-compensatory-leaves',
             'view-shift',
             'view-interview',
         ]);
@@ -200,6 +237,7 @@ class PermissionSeeder extends Seeder
         // Supervisor — oversight & operational role
         $supervisor = Role::firstOrCreate(['name' => 'supervisor', 'guard_name' => 'web']);
         $supervisor->syncPermissions([
+            'access-admin-panel',
             'view-employee',
             'view-teams',
             'view-team-attendance',
@@ -215,12 +253,19 @@ class PermissionSeeder extends Seeder
             'create-leave',
             'approve-leave',
             'reject-leave',
+            'view-compensatory-leaves',
             'view-shift',
         ]);
 
         // HR — full people operations
         $hr = Role::firstOrCreate(['name' => 'hr', 'guard_name' => 'web']);
         $hr->syncPermissions([
+            'access-admin-panel',
+            'add-manual-attendance',
+            'edit-attendance-logs',
+            'view-payroll',
+            'generate-payroll',
+            'view-performance-evaluation',
             'view-employee',
             'manage-employees',
             'view-departments',
@@ -236,6 +281,10 @@ class PermissionSeeder extends Seeder
             'view-half-days',
             'view-breaks',
             'view-leaves',
+            'view-compensatory-leaves',
+            'manage-compensatory-leaves',
+            'view-leave-cashouts',
+            'manage-leave-cashouts',
             'view-holidays',
             'manage-leave-balances',
             'offboard-employee',
@@ -245,7 +294,9 @@ class PermissionSeeder extends Seeder
 
         // Employee — minimal, self-service only
         $employee = Role::firstOrCreate(['name' => 'employee', 'guard_name' => 'web']);
-        // Employees don't need admin panel permissions
+        $employee->syncPermissions([
+            'view-own-performance',
+        ]);
 
         $this->command->info('✅ All permissions and roles seeded successfully!');
     }

@@ -7,6 +7,7 @@ use App\Models\PayrollPolicy;
 use App\Models\LateArrival;
 use App\Models\EmployeeBreak;
 use App\Models\Leave;
+use App\Services\LeaveCashoutService;
 use Carbon\Carbon;
 
 class PayrollCalculatorService
@@ -60,6 +61,13 @@ class PayrollCalculatorService
         $breakDeduction = $this->calculateBreakDeduction($employee, $startDate, $endDate, $policy);
         if ($breakDeduction > 0) {
             $deductions[] = ['name' => 'Break Overstep Fines', 'amount' => $breakDeduction];
+        }
+
+        // 4. Year-end leave encashment scheduled for this payroll run
+        $cashouts = LeaveCashoutService::payableFor($month, $year, [$employee->id])->get($employee->id, collect());
+        foreach ($cashouts as $cashout) {
+            $grossSalary += (float) $cashout->amount;
+            $earnings[] = ['name' => $cashout->payslipLabel(), 'amount' => (float) $cashout->amount];
         }
 
         $totalDeductions = collect($deductions)->sum('amount');
@@ -134,7 +142,8 @@ class PayrollCalculatorService
                 $q->where('is_paid', false);
             })
             ->whereBetween('start_date', [$start, $end])
-            ->sum('total_days'); // Assuming total_days column exists, otherwise calculate diff
+            ->get()
+            ->sum(fn (Leave $leave) => $leave->durationInDays());
 
         if ($unpaidDays > 0) {
             $dayRate = $grossSalary / 30;
@@ -191,6 +200,9 @@ class PayrollCalculatorService
             ->get()
             ->groupBy('emp_id');
 
+        // Year-end leave encashment scheduled for this payroll run
+        $cashoutsGrouped = LeaveCashoutService::payableFor($month, $year, $employeeIds);
+
         // 3. Resolve policies for the batch
         // (Optimization: Fetch all policies once)
         $allPolicies = PayrollPolicy::where('is_active', true)->get();
@@ -235,6 +247,12 @@ class PayrollCalculatorService
             $breakDeduction = $this->calculateBreakDeductionFromRecords($breaks, $policy);
             if ($breakDeduction > 0)
                 $deductions[] = ['name' => 'Break Overstep Fines', 'amount' => $breakDeduction];
+
+            // 4. Year-end leave encashment
+            foreach ($cashoutsGrouped->get($employee->id, collect()) as $cashout) {
+                $grossSalary += (float) $cashout->amount;
+                $earnings[] = ['name' => $cashout->payslipLabel(), 'amount' => (float) $cashout->amount];
+            }
 
             $totalDeductions = collect($deductions)->sum('amount');
             $results[$employee->id] = [
@@ -288,7 +306,7 @@ class PayrollCalculatorService
 
     private function calculateLeaveDeductionFromRecords($grossSalary, $leaveRecords)
     {
-        $unpaidDays = $leaveRecords->sum('total_days');
+        $unpaidDays = $leaveRecords->sum(fn (Leave $leave) => $leave->durationInDays());
         if ($unpaidDays > 0) {
             $dayRate = $grossSalary / 30;
             return round($unpaidDays * $dayRate, 2);

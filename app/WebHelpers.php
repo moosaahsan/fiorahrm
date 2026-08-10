@@ -32,6 +32,12 @@ if (!function_exists('app_settings')) {
             'full_day_allowed_in_month' => (int) ($settings['full_day_allowed_in_month'] ?? 20),
             'app_timezone' => $settings['app_timezone'] ?? config('app.timezone', 'Asia/Karachi'),
             'leaves_allowed_in_year' => (int) ($settings['leaves_allowed_in_year'] ?? 24),
+            'leave_eligibility_months' => (int) ($settings['leave_eligibility_months'] ?? 6),
+            'leave_carry_forward_enabled' => (bool) ($settings['leave_carry_forward_enabled'] ?? false),
+            'weekly_off_days' => (string) ($settings['weekly_off_days'] ?? ''),
+            'cpl_days_per_holiday' => (float) ($settings['cpl_days_per_holiday'] ?? 1),
+            'cpl_auto_approve' => (bool) ($settings['cpl_auto_approve'] ?? false),
+            'cpl_validity_days' => (int) ($settings['cpl_validity_days'] ?? 0),
         ];
 
         return $key ? ($formatted[$key] ?? null) : $formatted;
