@@ -5,10 +5,10 @@
     <div class="topbar-left">
         <a href="/" class="logo">
             <span>
-                <img src="{{ asset('assets/images/logo.png') }}" width="100%" alt="logo">
+                <img src="{{ asset('assets/images/logo.png') }}" alt="logo" style="max-height: 58px; max-width: 100%; width: auto; object-fit: contain;">
             </span>
             <i>
-                <img src="{{ asset('assets/images/ast-favicon.ico') }}" width="100%" alt="favicon">
+                <img src="{{ asset('assets/images/fiora-favicon.png') }}" alt="favicon" style="max-height: 40px; max-width: 100%; width: auto; object-fit: contain;">
             </i>
         </a>
     </div>

@@ -43,3 +43,6 @@ app/**/*copy*
 app/**/* copy*
 app/**/* copy [0-9]*
 app/Http/Controllers/LoginController.php
+
+# Local-only working folder (not part of the app)
+/tools/
