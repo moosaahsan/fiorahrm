@@ -15,6 +15,10 @@
 
 @section('button')
     <div class="d-flex gap-2">
+        <a class="btn btn-premium-edit" style="background: #10b981; border-color: #10b981;"
+            href="{{ route('admin.employees.export', $employee->id) }}">
+            <i class="fas fa-file-excel mr-2"></i> Download Excel
+        </a>
         @can('edit-employee')
             <a class="btn btn-premium-edit" href="{{ route('admin.employees.edit', $employee->id) }}">
                 <i class="fas fa-magic mr-2"></i> Refine Talent
@@ -30,7 +34,9 @@
 
 <div class="container-fluid employee-spotlight-page">
     <div class="spotlight-container">
-        
+
+        @include('includes.messages')
+
         <!-- Hero Section -->
         <div class="profile-hero">
             <div class="hero-avatar-wrapper">
@@ -160,19 +166,23 @@
                                 <div class="info-label">Employment Status</div>
                                 <div class="info-value">
                                     @php
-                                        $probationMonths = (int)($employee->probation ?: 3);
-                                        $completionDate = \Carbon\Carbon::parse($employee->joining_date)->addMonths($probationMonths);
-                                        $isProbation = now()->lt($completionDate);
-                                        $daysLeft = now()->diffInDays($completionDate, false);
+                                        $completionDate = $employee->probationEndsOn();
+                                        $isProbation = !$employee->isConfirmed();
+                                        $daysLeft = $completionDate ? now()->diffInDays($completionDate, false) : null;
                                     @endphp
-                                    
-                                    @if($isProbation)
+
+                                    @if($employee->confirmed_at)
+                                        <span class="badge bg-soft-success text-success px-3 py-2 rounded-pill" style="font-size: 0.75rem; background: #ecfdf5; border: 1px solid #a7f3d0;">
+                                            <i class="fas fa-check-circle mr-1"></i> Confirmed {{ $employee->confirmed_at->format('d M Y') }}
+                                        </span>
+                                    @elseif($isProbation)
                                         <span class="badge bg-soft-warning text-warning px-3 py-2 rounded-pill" style="font-size: 0.75rem; background: #fffbeb; border: 1px solid #fde68a;">
-                                            <i class="fas fa-hourglass-half mr-1"></i> Under Probation ({{ $daysLeft }}d left)
+                                            <i class="fas fa-hourglass-half mr-1"></i>
+                                            Under Probation @if($daysLeft !== null)({{ max($daysLeft, 0) }}d left)@endif
                                         </span>
                                     @else
-                                        <span class="badge bg-soft-success text-success px-3 py-2 rounded-pill" style="font-size: 0.75rem; background: #ecfdf5; border: 1px solid #a7f3d0;">
-                                            <i class="fas fa-check-circle mr-1"></i> Permanent / Confirmed
+                                        <span class="badge px-3 py-2 rounded-pill" style="font-size: 0.75rem; background: #eff6ff; border: 1px solid #bfdbfe; color: #1d4ed8;">
+                                            <i class="fas fa-clipboard-check mr-1"></i> Probation ended &mdash; awaiting confirmation
                                         </span>
                                     @endif
                                 </div>
@@ -243,17 +253,186 @@
                         Governance
                     </div>
                     <div class="info-group mb-2 d-flex justify-content-between align-items-center">
-                        <div class="info-label mb-0">Break Window</div>
-                        <div class="info-value" style="font-size: 0.9rem;">{{ $employee->break_duration }}m</div>
-                    </div>
-                    <div class="info-group mb-2 d-flex justify-content-between align-items-center">
                         <div class="info-label mb-0">Late Margin</div>
                         <div class="info-value" style="font-size: 0.9rem;">{{ $employee->late_minutes_margin }}m</div>
                     </div>
+                    @php
+                        $paidRemaining = $employee->leaveBalances
+                            ->where('leaveType.is_paid', true)
+                            ->sum('remaining');
+                    @endphp
                     <div class="info-group mb-0 d-flex justify-content-between align-items-center">
-                        <div class="info-label mb-0">Paid Leaves</div>
-                        <div class="info-value" style="font-size: 0.9rem;">{{ $employee->leaves_allowed_in_year }}d</div>
+                        <div class="info-label mb-0">Paid Leave Left</div>
+                        <div class="info-value" style="font-size: 0.9rem;">{{ rtrim(rtrim(number_format((float) $paidRemaining, 2), '0'), '.') }}d</div>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        @php
+            $canManageCareer = auth()->user()->can('edit-employee');
+            $canSeeSalary = auth()->user()->hasRole(['admin', 'administrator']);
+            $currency = app_settings('app_currency_symbol') ?? 'PKR';
+            $lastIncrement = $employee->lastIncrement;
+            $lastPromotion = $employee->lastPromotion;
+            $confirmation = $employee->confirmationEvent;
+        @endphp
+
+        <!-- Career Milestones -->
+        <div class="row mt-4">
+            <div class="col-12">
+                <div class="glass-card">
+                    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4" style="gap: 1rem;">
+                        <div class="card-label-top mb-0">
+                            <div class="icon-box" style="background: #eef2ff; color: #4f46e5;"><i class="fas fa-chart-line"></i></div>
+                            Career Progression
+                        </div>
+                        @if($canManageCareer)
+                            <button type="button" class="btn btn-sm btn-primary rounded-pill px-3" data-toggle="modal" data-target="#careerEventModal">
+                                <i class="fas fa-plus mr-1"></i> Add Record
+                            </button>
+                        @endif
+                    </div>
+
+                    <div class="row g-3">
+                        <!-- Last increment -->
+                        <div class="col-md-4">
+                            <div class="mini-stat h-100">
+                                <span class="mini-stat-lbl"><i class="fas fa-arrow-trend-up mr-1"></i> Last Increment</span>
+                                @if($lastIncrement)
+                                    <span class="mini-stat-val" style="font-size: 1rem;">{{ $lastIncrement->effective_date->format('d M Y') }}</span>
+                                    @if($canSeeSalary)
+                                        @php $rise = $lastIncrement->increase(); @endphp
+                                        <div class="small text-muted mt-1">
+                                            {{ number_format((float) $lastIncrement->previous_salary) }}
+                                            &rarr;
+                                            <strong style="color: #059669;">{{ number_format((float) $lastIncrement->new_salary) }}</strong>
+                                            {{ $currency }}
+                                            @if($rise['percent'] !== null)
+                                                <span style="color: #059669;">(+{{ $rise['percent'] }}%)</span>
+                                            @endif
+                                        </div>
+                                    @endif
+                                    <div class="small text-muted mt-1">{{ $lastIncrement->effective_date->diffForHumans() }}</div>
+                                @else
+                                    <span class="mini-stat-val text-muted" style="font-size: 0.95rem;">No increment recorded</span>
+                                @endif
+                            </div>
+                        </div>
+
+                        <!-- Probation / confirmation -->
+                        <div class="col-md-4">
+                            <div class="mini-stat h-100">
+                                <span class="mini-stat-lbl"><i class="fas fa-user-check mr-1"></i> Probation / Confirmation</span>
+                                @php $probationEnds = $employee->probationEndsOn(); @endphp
+
+                                @if($employee->confirmed_at)
+                                    <span class="mini-stat-val" style="font-size: 1rem; color: #059669;">Confirmed</span>
+                                    <div class="small text-muted mt-1">{{ $employee->confirmed_at->format('d M Y') }}</div>
+                                @elseif(!$probationEnds)
+                                    <span class="mini-stat-val text-muted" style="font-size: 0.95rem;">No joining date</span>
+                                @elseif($probationEnds->isFuture())
+                                    <span class="mini-stat-val" style="font-size: 1rem; color: #b45309;">On Probation</span>
+                                    <div class="small text-muted mt-1">
+                                        {{ (int) ($employee->probation ?: 0) }} months &middot;
+                                        ends {{ $probationEnds->format('d M Y') }}
+                                    </div>
+                                @else
+                                    {{-- Probation ran out but nobody has confirmed them yet. --}}
+                                    <span class="mini-stat-val" style="font-size: 1rem; color: #1d4ed8;">Awaiting Confirmation</span>
+                                    <div class="small text-muted mt-1">
+                                        Probation ended {{ $probationEnds->format('d M Y') }}
+                                    </div>
+                                @endif
+                            </div>
+                        </div>
+
+                        <!-- Last promotion -->
+                        <div class="col-md-4">
+                            <div class="mini-stat h-100">
+                                <span class="mini-stat-lbl"><i class="fas fa-award mr-1"></i> Last Promotion</span>
+                                @if($lastPromotion)
+                                    <span class="mini-stat-val" style="font-size: 1rem;">{{ $lastPromotion->effective_date->format('d M Y') }}</span>
+                                    <div class="small text-muted mt-1">
+                                        {{ $lastPromotion->previous_position ?: '—' }}
+                                        &rarr;
+                                        <strong>{{ $lastPromotion->new_position }}</strong>
+                                    </div>
+                                    <div class="small text-muted mt-1">{{ $lastPromotion->effective_date->diffForHumans() }}</div>
+                                @else
+                                    <span class="mini-stat-val text-muted" style="font-size: 0.95rem;">No promotion recorded</span>
+                                @endif
+                            </div>
+                        </div>
+                    </div>
+
+                    @if($employee->careerEvents->count() > 0)
+                        <div class="table-responsive mt-4">
+                            <table class="table table-borderless align-middle mb-0">
+                                <thead class="text-muted small text-uppercase fw-bold" style="border-bottom: 2px solid #f1f5f9;">
+                                    <tr>
+                                        <th class="ps-0 py-3">Effective</th>
+                                        <th class="py-3">Record</th>
+                                        <th class="py-3">Change</th>
+                                        <th class="py-3">Notes</th>
+                                        <th class="py-3">Recorded By</th>
+                                        @if($canManageCareer)<th class="py-3 pe-0 text-right">&nbsp;</th>@endif
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach($employee->careerEvents as $event)
+                                        <tr style="border-bottom: 1px solid #f8fafc;">
+                                            <td class="ps-0 py-3 fw-bold">{{ $event->effective_date->format('d M, Y') }}</td>
+                                            <td class="py-3">
+                                                <span class="badge rounded-pill px-3 py-2" style="font-size: 0.7rem; background: {{ match($event->type) {
+                                                    'increment' => '#ecfdf5',
+                                                    'promotion' => '#eef2ff',
+                                                    default => '#f0f9ff',
+                                                } }}; color: {{ match($event->type) {
+                                                    'increment' => '#059669',
+                                                    'promotion' => '#4f46e5',
+                                                    default => '#0284c7',
+                                                } }};">
+                                                    {{ $event->label() }}
+                                                </span>
+                                            </td>
+                                            <td class="py-3 small">
+                                                @if($event->new_position)
+                                                    {{ $event->previous_position ?: '—' }} &rarr; <strong>{{ $event->new_position }}</strong><br>
+                                                @endif
+                                                @if($event->new_salary !== null)
+                                                    @if($canSeeSalary)
+                                                        {{ number_format((float) $event->previous_salary) }} &rarr;
+                                                        <strong>{{ number_format((float) $event->new_salary) }}</strong> {{ $currency }}
+                                                    @else
+                                                        <span class="text-muted">Salary change (admin only)</span>
+                                                    @endif
+                                                @endif
+                                                @if($event->type === 'confirmation')
+                                                    <span class="text-muted">Confirmed off probation</span>
+                                                @endif
+                                            </td>
+                                            <td class="py-3 small text-muted">{{ $event->notes ?: '—' }}</td>
+                                            <td class="py-3 small">{{ $event->recordedBy->name ?? 'System' }}</td>
+                                            @if($canManageCareer)
+                                                <td class="py-3 pe-0 text-right">
+                                                    <form method="POST"
+                                                        action="{{ route('admin.employees.career_events.destroy', [$employee->id, $event->id]) }}"
+                                                        onsubmit="return confirm('Remove this record and restore the previous values?');">
+                                                        @csrf
+                                                        @method('DELETE')
+                                                        <button type="submit" class="btn btn-sm btn-link text-danger p-0" title="Remove">
+                                                            <i class="fas fa-trash-alt"></i>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            @endif
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
                 </div>
             </div>
         </div>
@@ -332,4 +511,94 @@
         @endif
     </div>
 </div>
+
+@if($canManageCareer)
+<div class="modal fade" id="careerEventModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <form method="POST" action="{{ route('admin.employees.career_events.store', $employee->id) }}" class="modal-content"
+            style="border-radius: 20px; overflow: hidden;">
+            @csrf
+            <div class="modal-header">
+                <h5 class="modal-title">Add Career Record</h5>
+                <button type="button" class="close" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group mb-3">
+                    <label>Record Type</label>
+                    <select name="type" id="career-type" class="form-control" required>
+                        <option value="increment">Salary Increment</option>
+                        <option value="promotion">Promotion</option>
+                        <option value="confirmation" @if($employee->confirmed_at) disabled @endif>
+                            Confirmation off Probation
+                            @if($employee->confirmed_at) (already confirmed) @endif
+                        </option>
+                    </select>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label>Effective Date</label>
+                    <input type="date" name="effective_date" class="form-control" value="{{ now()->toDateString() }}" required>
+                </div>
+
+                <div class="form-group mb-3" data-career-field="promotion" style="display: none;">
+                    <label>New Designation</label>
+                    <input type="text" name="new_position" class="form-control"
+                        placeholder="Current: {{ $employee->position ?: 'not set' }}">
+                </div>
+
+                <div class="form-group mb-3" data-career-field="salary">
+                    <label>
+                        New Salary
+                        <span class="text-muted" data-career-optional style="display: none;">(optional)</span>
+                    </label>
+                    <input type="number" name="new_salary" step="0.01" min="0" class="form-control"
+                        placeholder="Current: {{ number_format((float) $employee->salary, 2) }}">
+                    <small class="text-muted">This becomes the employee's salary from the effective date.</small>
+                </div>
+
+                <div class="form-group mb-0">
+                    <label>Notes</label>
+                    <textarea name="notes" rows="2" class="form-control" placeholder="Reason or approval reference"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-light rounded-pill px-4" data-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary rounded-pill px-4">Save Record</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+    (function () {
+        // Each record type needs a different set of fields.
+        var type = document.getElementById('career-type');
+        if (!type) return;
+
+        var promotionField = document.querySelector('[data-career-field="promotion"]');
+        var salaryField = document.querySelector('[data-career-field="salary"]');
+        var optionalHint = document.querySelector('[data-career-optional]');
+        var positionInput = promotionField.querySelector('input');
+        var salaryInput = salaryField.querySelector('input');
+
+        function sync() {
+            var value = type.value;
+
+            promotionField.style.display = value === 'promotion' ? '' : 'none';
+            positionInput.required = value === 'promotion';
+            if (value !== 'promotion') positionInput.value = '';
+
+            salaryField.style.display = value === 'confirmation' ? 'none' : '';
+            salaryInput.required = value === 'increment';
+            if (value === 'confirmation') salaryInput.value = '';
+
+            // A promotion may or may not carry a raise.
+            optionalHint.style.display = value === 'promotion' ? '' : 'none';
+        }
+
+        type.addEventListener('change', sync);
+        sync();
+    })();
+</script>
+@endif
 @endsection

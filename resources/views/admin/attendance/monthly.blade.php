@@ -51,6 +51,9 @@
                         <span class="input-group-text bg-white"><i class="fa fa-search"></i></span>
                         <input id="globalSearch" type="text" class="form-control" placeholder="Search name or position">
                     </div>
+                    <button id="btnExportExcel" type="button" class="btn btn-sm btn-success ms-2">
+                        <i class="fa fa-file-excel me-1"></i> Download Excel
+                    </button>
                 </div>
             </div>
         </div>
@@ -417,6 +420,20 @@
                 $('#globalSearch').val('');
                 const { start, end } = getStartEndFromYearMonth();
                 initializeTable(start, end);
+            });
+
+            // Bulk Excel download for whatever is currently filtered on screen
+            $('#btnExportExcel').on('click', function () {
+                const { start, end } = getStartEndFromYearMonth();
+                const params = new URLSearchParams({ start, end });
+
+                const employeeId = $('#employee_id').val() || $('#left_employee_id').val();
+                if (employeeId) params.set('employee_id', employeeId);
+
+                const shift = $('#shift').val();
+                if (shift) params.set('shift', shift);
+
+                window.location = "{{ route('admin.attendance.monthly.export') }}?" + params.toString();
             });
 
             // Month navigation

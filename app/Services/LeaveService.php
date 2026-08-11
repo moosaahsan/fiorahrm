@@ -65,6 +65,11 @@ class LeaveService
                     continue;
                 }
 
+                // HR set this employee's allocation by hand — leave it alone.
+                if ($balance->is_override) {
+                    continue;
+                }
+
                 $increase = $entitlement - (float) $balance->allocated;
 
                 if ($increase > 0) {
@@ -74,6 +79,51 @@ class LeaveService
                 }
             }
         });
+    }
+
+    /**
+     * Set one employee's allocation for a leave type, overriding the entitlement
+     * that comes from the leave type itself.
+     *
+     * Days already taken are never touched — only what is left moves. The row is
+     * flagged as an override so the nightly sync does not reset it.
+     */
+    public static function setAllocation(Employee $employee, string $leaveTypeSlug, float $days, ?int $year = null): LeaveBalance
+    {
+        $year = $year ?? (int) now()->year;
+
+        $balance = LeaveBalance::firstOrNew([
+            'employee_id' => $employee->id,
+            'leave_type' => $leaveTypeSlug,
+            'year' => $year,
+        ]);
+
+        $used = (float) ($balance->used ?? 0);
+
+        $balance->allocated = $days;
+        $balance->used = $used;
+        // Can go negative if HR allocates less than the employee has already
+        // taken — that is real, and better surfaced than silently clamped.
+        $balance->remaining = $days - $used;
+        $balance->is_override = true;
+        $balance->save();
+
+        return $balance;
+    }
+
+    /**
+     * The employee's balances for a year, keyed by leave type slug.
+     *
+     * @return \Illuminate\Support\Collection<string, LeaveBalance>
+     */
+    public static function balancesFor(Employee $employee, ?int $year = null)
+    {
+        $year = $year ?? (int) now()->year;
+
+        return LeaveBalance::where('employee_id', $employee->id)
+            ->where('year', $year)
+            ->get()
+            ->keyBy('leave_type');
     }
 
     /**

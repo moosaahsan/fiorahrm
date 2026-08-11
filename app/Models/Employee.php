@@ -17,6 +17,7 @@ class Employee extends Model
         'position',
         'joining_date',
         'probation',
+        'confirmed_at',
         'email',
         'contact_no',
         'emergency_no',
@@ -54,6 +55,11 @@ class Employee extends Model
         'deleted_by',
         'cnic_front_path',
         'cnic_back_path'
+    ];
+
+    protected $casts = [
+        'joining_date' => 'date',
+        'confirmed_at' => 'date',
     ];
 
     public function resignedBy()
@@ -170,6 +176,67 @@ class Employee extends Model
     public function exitRecords()
     {
         return $this->hasMany(EmployeeExitRecord::class, 'emp_id');
+    }
+
+    /**
+     * Salary increments, promotions and confirmation, newest first.
+     */
+    public function careerEvents()
+    {
+        return $this->hasMany(EmployeeCareerEvent::class)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id');
+    }
+
+    public function lastIncrement()
+    {
+        return $this->hasOne(EmployeeCareerEvent::class)
+            ->ofType(EmployeeCareerEvent::TYPE_INCREMENT)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id');
+    }
+
+    public function lastPromotion()
+    {
+        return $this->hasOne(EmployeeCareerEvent::class)
+            ->ofType(EmployeeCareerEvent::TYPE_PROMOTION)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id');
+    }
+
+    public function confirmationEvent()
+    {
+        return $this->hasOne(EmployeeCareerEvent::class)
+            ->ofType(EmployeeCareerEvent::TYPE_CONFIRMATION)
+            ->orderByDesc('effective_date')
+            ->orderByDesc('id');
+    }
+
+    /**
+     * The date probation ends on paper — joining date plus the probation months.
+     * HR confirming the employee is what actually settles it; this is only the
+     * expectation until then.
+     */
+    public function probationEndsOn(): ?\Carbon\Carbon
+    {
+        if (! $this->joining_date) {
+            return null;
+        }
+
+        $months = (int) ($this->probation ?: 0);
+
+        return \Carbon\Carbon::parse($this->joining_date)->addMonths($months);
+    }
+
+    public function isConfirmed(): bool
+    {
+        if ($this->confirmed_at) {
+            return true;
+        }
+
+        $endsOn = $this->probationEndsOn();
+
+        return $endsOn !== null && now()->greaterThanOrEqualTo($endsOn);
     }
 
     public function getProfilePicUrlAttribute()

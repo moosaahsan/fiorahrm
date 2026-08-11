@@ -213,6 +213,15 @@
                     </li>
                 @endcan
 
+                @can('manage-leave-balances')
+                    <li>
+                        <a href="{{ route('admin.leave_balances.index') }}"
+                            class="waves-effect {{ request()->is('admin/leave-balances*') ? 'mm active' : '' }}">
+                            <i class="mdi mdi-clipboard-text-outline"></i> <span> Leave Balance Sheet </span>
+                        </a>
+                    </li>
+                @endcan
+
                 @can('view-compensatory-leaves')
                     <li>
                         <a href="{{ route('admin.compensatory_leaves.index') }}"

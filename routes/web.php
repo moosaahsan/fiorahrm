@@ -76,9 +76,17 @@ Route::middleware(['auth', 'is_admin'])->prefix('admin')->group(function () {
     Route::middleware('permission:view-employee')->group(function () {
         Route::get('/employee_data/{id}', [EmployeeController::class, 'employee_data'])->name('employee_data');
         Route::get('employees', [EmployeeController::class, 'index'])->name('admin.employees.index');
+        // Registered before the resource so it is not swallowed by employees/{employee}.
+        Route::get('employees/{id}/export', [EmployeeController::class, 'exportExcel'])->name('admin.employees.export');
         Route::resource('employees', EmployeeController::class)->except(['index', 'show'])->names('admin.employees');
         Route::get('employees/{employee}', [EmployeeController::class, 'show'])->name('admin.employees.show');
         Route::get('employees/{id}/cnic/{side}', [EmployeeController::class, 'viewCnic'])->name('admin.employees.cnic.view');
+    });
+
+    // Career milestones: increments, promotions, confirmation off probation
+    Route::middleware('permission:edit-employee')->group(function () {
+        Route::post('/employees/{id}/career-events', [EmployeeController::class, 'storeCareerEvent'])->name('admin.employees.career_events.store');
+        Route::delete('/employees/{id}/career-events/{event}', [EmployeeController::class, 'destroyCareerEvent'])->name('admin.employees.career_events.destroy');
     });
 
     Route::middleware('permission:offboard-employee|manage-employees|delete-employee')->group(function () {
@@ -173,6 +181,7 @@ Route::middleware(['auth', 'is_admin'])->prefix('admin')->group(function () {
         Route::get('/attendance/{id}', [AdminAttendanceController::class, 'show'])->name('admin.attendance.show');
         Route::get('/attendance-sheet', [MonthlyAttendanceController::class, 'monthlyView'])->name('admin.attendance.monthly');
         Route::match(['get', 'post'], '/attendance-sheet/data', [MonthlyAttendanceController::class, 'monthlyData'])->name('admin.attendance.monthly.data');
+        Route::get('/attendance-sheet/export', [MonthlyAttendanceController::class, 'exportMonthly'])->name('admin.attendance.monthly.export');
     });
 
     Route::middleware('permission:manage-attendance')->group(function () {
@@ -249,6 +258,13 @@ Route::middleware(['auth', 'is_admin'])->prefix('admin')->group(function () {
     Route::middleware('permission:view-leave-adjustments')->group(function () {
         Route::get('/leave-adjustments', [\App\Http\Controllers\Admin\LeaveAdjustmentController::class, 'index'])->name('admin.leave_adjustments.index');
         Route::get('/leave-adjustments/data', [\App\Http\Controllers\Admin\LeaveAdjustmentController::class, 'data'])->name('admin.leave_adjustments.data');
+    });
+
+    // Leave Balance Sheet — every employee, every leave type, for a chosen year
+    Route::middleware('permission:manage-leave-balances')->group(function () {
+        Route::get('/leave-balances', [\App\Http\Controllers\Admin\LeaveBalanceReportController::class, 'index'])->name('admin.leave_balances.index');
+        Route::get('/leave-balances/data', [\App\Http\Controllers\Admin\LeaveBalanceReportController::class, 'data'])->name('admin.leave_balances.data');
+        Route::get('/leave-balances/export', [\App\Http\Controllers\Admin\LeaveBalanceReportController::class, 'export'])->name('admin.leave_balances.export');
     });
 
     // Compensatory Leave (earned by working public holidays)

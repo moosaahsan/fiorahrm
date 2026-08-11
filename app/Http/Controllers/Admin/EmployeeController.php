@@ -219,15 +219,129 @@ class EmployeeController extends Controller
         $branches = \App\Models\Branch::accessible()->where('is_active', true)->get();
         $salary_structures = \App\Models\SalaryStructure::accessible()->get();
 
-        return view('admin.employees.edit', compact('employee', 'schedules', 'roles', 'teams', 'branches', 'salary_structures'));
+        // Leave entitlement for this employee, so HR can allocate per person.
+        $leaveYear = (int) now()->year;
+        $leaveTypes = \App\Models\LeaveType::where('is_active', true)->orderBy('name')->get();
+        $leaveBalances = \App\Services\LeaveService::balancesFor($employee, $leaveYear);
+        $leaveEligibleFrom = \App\Services\LeaveService::entitlementStartDate($employee);
+
+        return view('admin.employees.edit', compact(
+            'employee', 'schedules', 'roles', 'teams', 'branches', 'salary_structures',
+            'leaveTypes', 'leaveBalances', 'leaveYear', 'leaveEligibleFrom'
+        ));
     }
 
     public function show($id)
     {
         $this->authorize('view-employee');
-        $employee = Employee::accessible()->with(['user.roles', 'team', 'branch', 'currentShiftAssignment.shift', 'exitRecords.processedBy'])->findOrFail($id);
+        $employee = Employee::accessible()->with([
+            'user.roles', 'team', 'branch', 'currentShiftAssignment.shift', 'exitRecords.processedBy',
+            'careerEvents.recordedBy', 'lastIncrement', 'lastPromotion', 'confirmationEvent',
+            'leaveBalances.leaveType',
+        ])->findOrFail($id);
 
         return view('admin.employees.show', compact('employee'));
+    }
+
+    /**
+     * Download one employee's full record as an Excel workbook.
+     *
+     * Salary and bank details are included only for the roles that can already
+     * see them on the profile page.
+     */
+    public function exportExcel($id)
+    {
+        $this->authorize('view-employee');
+
+        $employee = Employee::accessible()->with([
+            'user.roles', 'team', 'branch', 'currentShiftAssignment.shift', 'salaryStructure',
+            'exitRecords.processedBy', 'careerEvents.recordedBy', 'lastIncrement', 'lastPromotion',
+            'leaveBalances.leaveType',
+        ])->findOrFail($id);
+
+        $export = new \App\Services\Export\EmployeeProfileExport(
+            $employee,
+            auth()->user()->hasRole(['admin', 'administrator'])
+        );
+
+        $path = tempnam(sys_get_temp_dir(), 'employee-export-') . '.xlsx';
+        $export->writeTo($path);
+
+        ActivityLogger::log('export', 'Employee', 'Exported profile of ' . $employee->name . ' (#' . $employee->id . ')');
+
+        return response()->download($path, $export->filename(), [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
+    }
+
+    /**
+     * Record a salary increment, promotion or confirmation off probation.
+     *
+     * The event is applied to the employee record as well as logged, so the
+     * profile and the history never disagree.
+     */
+    public function storeCareerEvent(Request $request, $id)
+    {
+        $this->authorize('edit-employee');
+
+        $employee = Employee::accessible()->findOrFail($id);
+
+        $validated = $request->validate([
+            'type' => 'required|in:increment,promotion,confirmation',
+            'effective_date' => 'required|date',
+            'new_salary' => 'nullable|numeric|min:0',
+            'new_position' => 'nullable|string|max:255',
+            'notes' => 'nullable|string|max:1000',
+        ]);
+
+        try {
+            match ($validated['type']) {
+                'increment' => \App\Services\EmployeeCareerEventService::recordIncrement(
+                    $employee,
+                    (float) $request->validate(['new_salary' => 'required|numeric|min:0'])['new_salary'],
+                    $validated['effective_date'],
+                    auth()->id(),
+                    $validated['notes'] ?? null,
+                ),
+                'promotion' => \App\Services\EmployeeCareerEventService::recordPromotion(
+                    $employee,
+                    $request->validate(['new_position' => 'required|string|max:255'])['new_position'],
+                    $validated['effective_date'],
+                    isset($validated['new_salary']) ? (float) $validated['new_salary'] : null,
+                    auth()->id(),
+                    $validated['notes'] ?? null,
+                ),
+                'confirmation' => \App\Services\EmployeeCareerEventService::recordConfirmation(
+                    $employee,
+                    $validated['effective_date'],
+                    auth()->id(),
+                    $validated['notes'] ?? null,
+                ),
+            };
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage())->withInput();
+        }
+
+        ActivityLogger::log('update', 'Employee', ActivityLogger::format('update', 'Employee', $employee->name, $employee->id));
+
+        return back()->with('success', 'Career record added.');
+    }
+
+    public function destroyCareerEvent($id, $eventId)
+    {
+        $this->authorize('edit-employee');
+
+        $employee = Employee::accessible()->findOrFail($id);
+
+        $event = \App\Models\EmployeeCareerEvent::where('employee_id', $employee->id)->findOrFail($eventId);
+
+        try {
+            \App\Services\EmployeeCareerEventService::undo($event);
+        } catch (\InvalidArgumentException $e) {
+            return back()->with('error', $e->getMessage());
+        }
+
+        return back()->with('success', 'Career record removed and the previous values restored.');
     }
 
     public function assignShift(Request $request): JsonResponse
@@ -414,14 +528,7 @@ class EmployeeController extends Controller
 
             // Add default employee settings
             $defaultSettings = [
-                'break_duration' => $request->input('break_duration', '45'),
-                'half_day_allowed_in_month' => $request->input('number_half_days_allowed_in_month', '4'),
-                'full_day_allowed_in_month' => $request->input('number_full_days_allowed_in_month', '2'),
-                'leaves_allowed_in_year' => $request->input('leaves_allowed_in_year', '16'),
                 'late_grace_minutes' => $request->input('late_minutes_margin', '5'),
-                'idle_time_allowed' => $request->input('idle_time_allowed', '5'),
-                'mark_half_day_after' => $request->input('mark_half_day_after', '120'),
-                'app_resp_grace_minutes' => $request->input('app_resp_grace_minutes', '1'),
                 'time_zone' => $request->input('time_zone', 'Asia/Karachi')
             ];
 
@@ -464,7 +571,6 @@ class EmployeeController extends Controller
         $rules = [
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users,email,' . $employee->user_id,
-            'password' => 'nullable|string|min:6',
             'position' => 'required',
             'joining_date' => 'required|date',
             'probation' => 'required|integer',
@@ -474,13 +580,8 @@ class EmployeeController extends Controller
             'dob' => 'nullable|date',
             'schedule' => 'required|integer',
             'role' => 'required|exists:roles,name',
-            'break_duration' => 'nullable|integer|min:0',
             'break_allowed_in_half_day' => 'nullable|integer|min:0',
-            'number_full_days_allowed_in_month' => 'nullable|integer|min:0',
-            'number_half_days_allowed_in_month' => 'nullable|integer|min:0',
             'late_minutes_margin' => 'nullable|integer|min:0',
-            'leaves_allowed_in_year' => 'nullable|integer|min:0',
-            'idle_time_allowed' => 'nullable|integer|min:0',
             'mark_half_day_after' => 'nullable|integer|min:0',
             'app_resp_grace_minutes' => 'nullable|integer|min:0',
             'time_zone' => 'nullable|string',
@@ -494,6 +595,9 @@ class EmployeeController extends Controller
             'branch_code' => 'nullable|string|max:255',
             'cnic_front' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
             'cnic_back' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
+            // Per-employee leave entitlement, keyed by leave type slug.
+            'leave_allocations' => 'nullable|array',
+            'leave_allocations.*' => 'nullable|numeric|min:0|max:365',
         ];
 
         if (auth()->user()->hasRole(['admin', 'administrator'])) {
@@ -535,13 +639,11 @@ class EmployeeController extends Controller
             $employee->user->profile_pic = $filename;
         }
 
-        // Update USER record
+        // Update USER record. Passwords are not changed from here — the employee
+        // form has no password field.
         $employee->user->update([
             'name' => $validated['name'],
             'email' => $validated['email'],
-            'password' => $validated['password']
-                ? Hash::make($validated['password'])
-                : $employee->user->password,
             'profile_pic' => $employee->user->profile_pic,
         ]);
 
@@ -573,14 +675,10 @@ class EmployeeController extends Controller
             'gender' => $validated['gender'],
             'dob' => $validated['dob'] ?? null,
             'profile_pic' => $employee->profile_pic,
-            'break_duration' => $validated['break_duration'] ?? 45,
-            'break_allowed_in_half_day' => $validated['break_allowed_in_half_day'] ?? 30,
-            'number_full_days_allowed_in_month' => $validated['number_full_days_allowed_in_month'] ?? 0,
-            'number_half_days_allowed_in_month' => $validated['number_half_days_allowed_in_month'] ?? 0,
+            // Fields no longer on the form keep whatever they already hold.
+            'break_allowed_in_half_day' => $validated['break_allowed_in_half_day'] ?? $employee->break_allowed_in_half_day,
             'late_minutes_margin' => $validated['late_minutes_margin'] ?? 5,
-            'leaves_allowed_in_year' => $validated['leaves_allowed_in_year'] ?? 16,
-            'idle_time_allowed' => $validated['idle_time_allowed'] ?? 5,
-            'mark_half_day_after' => $validated['mark_half_day_after'] ?? null,
+            'mark_half_day_after' => $validated['mark_half_day_after'] ?? $employee->mark_half_day_after,
             'app_resp_grace_minutes' => $validated['app_resp_grace_minutes'] ?? null,
             'time_zone' => $validated['time_zone'] ?? null,
             'team_id' => $validated['team_id'] ?? null,
@@ -623,14 +721,7 @@ class EmployeeController extends Controller
 
         // Update employee settings table
         $customSettings = [
-            'break_duration' => $validated['break_duration'] ?? 45,
-            'half_day_allowed_in_month' => $validated['number_half_days_allowed_in_month'] ?? 0,
-            'full_day_allowed_in_month' => $validated['number_full_days_allowed_in_month'] ?? 0,
-            'leaves_allowed_in_year' => $validated['leaves_allowed_in_year'] ?? 16,
             'late_grace_minutes' => $validated['late_minutes_margin'] ?? 5,
-            'idle_time_allowed' => $validated['idle_time_allowed'] ?? 5,
-            'mark_half_day_after' => $validated['mark_half_day_after'] ?? '120',
-            'app_resp_grace_minutes' => $validated['app_resp_grace_minutes'] ?? '1',
             'time_zone' => $validated['time_zone'] ?? 'Asia/Karachi'
         ];
 
@@ -643,6 +734,9 @@ class EmployeeController extends Controller
 
         clear_employee_settings_cache($employee->id);
 
+        // Per-employee leave entitlement
+        $this->syncLeaveAllocations($employee, $request->input('leave_allocations', []));
+
         // Log activity
         ActivityLogger::log('update', 'Employee', ActivityLogger::format('update', 'Employee', $employee->name, $employee->id));
 
@@ -654,6 +748,37 @@ class EmployeeController extends Controller
     }
 
 
+
+    /**
+     * Apply the leave entitlement HR typed on the employee form.
+     *
+     * Only types that are actually allocated annually are writable here.
+     * Compensatory leave is earned by working public holidays and is managed
+     * from its own screen, so it is never set by hand from this form.
+     *
+     * @param  array<string, mixed>  $allocations  leave type slug => days
+     */
+    private function syncLeaveAllocations(Employee $employee, array $allocations): void
+    {
+        if (! $allocations || ! auth()->user()->can('manage-leave-balances')) {
+            return;
+        }
+
+        $allocatable = \App\Models\LeaveType::where('is_active', true)
+            ->where('auto_allocate', true)
+            ->pluck('slug')
+            ->all();
+
+        $year = (int) now()->year;
+
+        foreach ($allocations as $slug => $days) {
+            if ($days === null || $days === '' || ! in_array($slug, $allocatable, true)) {
+                continue;
+            }
+
+            \App\Services\LeaveService::setAllocation($employee, $slug, (float) $days, $year);
+        }
+    }
 
     public function resign(Request $request, $id)
     {

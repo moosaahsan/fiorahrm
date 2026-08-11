@@ -47,6 +47,36 @@ class MonthlyAttendanceController extends Controller
         return view('admin.attendance.monthly', compact('activeEmployees', 'leftEmployees', 'shifts', 'start', 'end'));
     }
 
+    /**
+     * Bulk-download the monthly attendance sheet as an Excel workbook, using
+     * whatever date range / employee / shift filter is active on screen.
+     */
+    public function exportMonthly(Request $request)
+    {
+        $period = \App\Services\PayrollPeriodService::getPeriodForDate(now());
+
+        $start = $request->filled('start') ? Carbon::parse($request->input('start'))->startOfDay() : $period['start']->copy();
+        $end = $request->filled('end') ? Carbon::parse($request->input('end'))->endOfDay() : $period['end']->copy();
+
+        if ($end->lessThan($start)) {
+            [$start, $end] = [$end->copy(), $start->copy()];
+        }
+
+        $export = new \App\Services\Export\AttendanceMonthlySheetExport(
+            $start,
+            $end,
+            $request->filled('employee_id') ? (int) $request->input('employee_id') : null,
+            $request->filled('shift') ? (int) $request->input('shift') : null,
+        );
+
+        $path = tempnam(sys_get_temp_dir(), 'attendance-export-') . '.xlsx';
+        $export->writeTo($path);
+
+        return response()->download($path, $export->filename(), [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ])->deleteFileAfterSend(true);
+    }
+
     public function monthlyData(Request $request)
     {
         // 1) Parse & normalize range (accept date_start/date_end to avoid colliding with DataTables pagination 'start' offset)

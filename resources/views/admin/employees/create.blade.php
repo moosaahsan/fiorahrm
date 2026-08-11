@@ -228,34 +228,18 @@
 
                     <!-- Policy Config -->
                     <div class="saas-card" style="border-left: 6px solid #8b5cf6;">
-                        <div class="section-tag"><i class="fas fa-cog"></i> Workforce Intelligence Policies</div>
+                        <div class="section-tag"><i class="fas fa-cog"></i> Attendance Policy</div>
                         <div class="policy-grid">
-                            <div class="form-group">
-                                <label>Break (min)</label>
-                                <input type="number" class="saas-input" name="break_duration" value="45">
-                            </div>
-                            <div class="form-group">
-                                <label>Idle Limit (min)</label>
-                                <input type="number" class="saas-input" name="idle_time_allowed" value="5">
-                            </div>
                             <div class="form-group">
                                 <label>Late Grace (min)</label>
                                 <input type="number" class="saas-input" name="late_minutes_margin" value="5">
                             </div>
-                            <div class="form-group">
-                                <label>Leaves / Year</label>
-                                <input type="number" class="saas-input" name="leaves_allowed_in_year" value="16"
-                                    style="color: #4f46e5; border-color: #e0e7ff">
-                            </div>
-                            <div class="form-group">
-                                <label>Full Day Allowance</label>
-                                <input type="number" class="saas-input" name="number_full_days_allowed_in_month" value="0">
-                            </div>
-                            <div class="form-group">
-                                <label>Half Day Allowance</label>
-                                <input type="number" class="saas-input" name="number_half_days_allowed_in_month" value="0">
-                            </div>
                         </div>
+                        <p class="text-muted mt-3 mb-0" style="font-size: 0.875rem;">
+                            <i class="fas fa-info-circle"></i>
+                            Leave entitlement is applied automatically from the leave policy. To give this person a
+                            different allocation, edit their profile after saving.
+                        </p>
                     </div>
                 </div>
 

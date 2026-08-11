@@ -76,13 +76,6 @@
                                             name="position" required />
                                     </div>
                                 </div>
-                                <div class="col-md-6 mb-4">
-                                    <div class="form-group">
-                                        <label>Reset Password (Optional)</label>
-                                        <input type="password" class="saas-input" name="password"
-                                            placeholder="Leave blank to keep current" autocomplete="new-password">
-                                    </div>
-                                </div>
                             </div>
 
                             <hr style="border-top: 1px dashed #e2e8f0; margin-bottom: 2rem;">
@@ -300,39 +293,79 @@
 
                 <!-- Policy Override -->
                 <div class="saas-card" style="border-left: 6px solid #8b5cf6;">
-                    <div class="section-tag" style="color: #8b5cf6;"><i class="fas fa-user-cog"></i> Intelligence Policy
-                        Overrides</div>
+                    <div class="section-tag" style="color: #8b5cf6;"><i class="fas fa-user-cog"></i> Attendance Policy
+                        Override</div>
                     <div class="policy-grid">
-                        <div class="form-group">
-                            <label>Break Duration</label>
-                            <input type="number" class="saas-input" name="break_duration"
-                                value="{{ $employee->break_duration }}">
-                        </div>
                         <div class="form-group">
                             <label>Late Grace (m)</label>
                             <input type="number" class="saas-input" name="late_minutes_margin"
                                 value="{{ $employee->late_minutes_margin }}">
                         </div>
-                        <div class="form-group">
-                            <label>Yearly Leaves</label>
-                            <input type="number" class="saas-input" name="leaves_allowed_in_year"
-                                value="{{ $employee->leaves_allowed_in_year }}">
-                        </div>
-                        <div class="form-group">
-                            <label>Idle Limit (m)</label>
-                            <input type="number" class="saas-input" name="idle_time_allowed"
-                                value="{{ $employee->idle_time_allowed }}">
-                        </div>
-                        <div class="form-group">
-                            <label>Full Day Allowance</label>
-                            <input type="number" class="saas-input" name="number_full_days_allowed_in_month"
-                                value="{{ $employee->number_full_days_allowed_in_month }}">
-                        </div>
-                        <div class="form-group">
-                            <label>Half Day Allowance</label>
-                            <input type="number" class="saas-input" name="number_half_days_allowed_in_month"
-                                value="{{ $employee->number_half_days_allowed_in_month }}">
-                        </div>
+                    </div>
+                </div>
+
+                <!-- Leave Entitlement -->
+                <div class="saas-card" style="border-left: 6px solid #10b981;">
+                    <div class="section-tag" style="color: #10b981;">
+                        <i class="fas fa-calendar-check"></i> Leave Entitlement — {{ $leaveYear }}
+                    </div>
+
+                    <p class="text-muted mb-4" style="font-size: 0.875rem;">
+                        Days allocated to this employee for {{ $leaveYear }}. Leave these at the standard entitlement
+                        unless this person has been given something different — anything you change here is kept and
+                        will not be reset by the nightly balance sync.
+                        @if($leaveEligibleFrom && $leaveEligibleFrom->isFuture())
+                            <br>
+                            <span style="color: #b45309;">
+                                <i class="fas fa-hourglass-half"></i>
+                                Entitlement unlocks on {{ $leaveEligibleFrom->format('d M Y') }}
+                                ({{ \App\Services\LeaveService::eligibilityMonths() }} months after joining).
+                            </span>
+                        @endif
+                    </p>
+
+                    <div class="policy-grid">
+                        @foreach($leaveTypes as $type)
+                            @php
+                                $balance = $leaveBalances->get($type->slug);
+                                $used = (float) ($balance->used ?? 0);
+                                $allocated = (float) ($balance->allocated ?? 0);
+                                $remaining = (float) ($balance->remaining ?? 0);
+                                $trim = fn($n) => rtrim(rtrim(number_format($n, 2), '0'), '.');
+                            @endphp
+
+                            <div class="form-group">
+                                <label>
+                                    {{ $type->name }}
+                                    @if($type->auto_allocate)
+                                        <span class="text-muted" style="font-weight: 400;">
+                                            (standard {{ $type->max_days }})
+                                        </span>
+                                    @endif
+                                </label>
+
+                                @if($type->auto_allocate)
+                                    <input type="number" step="0.5" min="0" max="365" class="saas-input"
+                                        name="leave_allocations[{{ $type->slug }}]" value="{{ $trim($allocated) }}">
+                                @else
+                                    {{-- Compensatory leave is earned by working holidays; maternity is granted
+                                         case by case. Neither is typed in here. --}}
+                                    <input type="number" class="saas-input" value="{{ $trim($allocated) }}" disabled>
+                                @endif
+
+                                <small class="text-muted">
+                                    Used {{ $trim($used) }} &middot; Remaining {{ $trim($remaining) }}
+                                    @if($balance && $balance->is_override)
+                                        &middot; <span style="color: #7c3aed;">custom</span>
+                                    @endif
+                                    @if($type->slug === \App\Models\LeaveType::CPL_SLUG)
+                                        <br><a href="{{ route('admin.compensatory_leaves.index') }}">Earned from public holidays &rarr;</a>
+                                    @elseif(!$type->auto_allocate)
+                                        <br>Granted case by case, not allocated yearly.
+                                    @endif
+                                </small>
+                            </div>
+                        @endforeach
                     </div>
                 </div>
 
