@@ -40,7 +40,7 @@ class LeaveService
     public static function syncBalances(Employee $employee, ?int $year = null): void
     {
         $year = $year ?? (int) now()->year;
-        $eligible = self::isEligible($employee, $year);
+        $eligible = self::isEligible($employee);
 
         DB::transaction(function () use ($employee, $year, $eligible) {
             foreach (self::activeLeaveTypes() as $leaveType) {
@@ -127,10 +127,15 @@ class LeaveService
     }
 
     /**
-     * Has the employee completed the configured waiting period by the end of
-     * the given year? Entitlement unlocks in full — there is no pro-rata.
+     * Has the employee completed the configured waiting period as of today?
+     * Entitlement unlocks in full — there is no pro-rata.
+     *
+     * Always measured against the real current date, never the end of
+     * whichever year a balance is being synced for — otherwise someone whose
+     * 6 months finishes in November would get their full allocation the
+     * moment the current year starts, months before they've actually earned it.
      */
-    public static function isEligible(Employee $employee, ?int $year = null): bool
+    public static function isEligible(Employee $employee): bool
     {
         $start = self::entitlementStartDate($employee);
 
@@ -138,9 +143,7 @@ class LeaveService
             return false;
         }
 
-        $cutoff = $year ? Carbon::create($year, 12, 31)->endOfDay() : now();
-
-        return $start->lessThanOrEqualTo($cutoff);
+        return $start->lessThanOrEqualTo(now());
     }
 
     /**

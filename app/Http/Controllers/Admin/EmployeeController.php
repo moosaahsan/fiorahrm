@@ -15,6 +15,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Role;
 use App\Models\EmployeeSetting;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Response as ResponseFacade;
+use Illuminate\Support\Str;
+use Carbon\Carbon;
 
 class EmployeeController extends Controller
 {
@@ -272,6 +276,234 @@ class EmployeeController extends Controller
         return response()->download($path, $export->filename(), [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         ])->deleteFileAfterSend(true);
+    }
+
+    /**
+     * CSV template for bulk employee onboarding. CSV (not .xlsx) so it can be
+     * generated without a spreadsheet library and still opens fine in Excel.
+     */
+    public function importTemplate()
+    {
+        $this->authorize('create-employee');
+
+        $headers = [
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=employee_bulk_import_template.csv",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0",
+        ];
+
+        $columns = [
+            'Full Name', 'Email', 'Position', 'Contact No', 'Emergency No',
+            'Gender', 'Joining Date', 'Probation (Months)', 'Shift Name', 'Role', 'Salary',
+        ];
+
+        $shiftName = Shift::query()->value('shift_name') ?? 'Morning';
+
+        $callback = function () use ($columns, $shiftName) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, $columns);
+            fputcsv($file, [
+                'John Smith', 'john.smith@example.com', 'Front Desk Officer', '03001234567',
+                '03007654321', 'male', '2026-08-15', '3', $shiftName, 'employee', '50000',
+            ]);
+            fclose($file);
+        };
+
+        return ResponseFacade::stream($callback, 200, $headers);
+    }
+
+    public function importModal()
+    {
+        $this->authorize('create-employee');
+        return view('admin.employees.modals.import_entry');
+    }
+
+    /**
+     * Bulk-create employee accounts from an uploaded CSV. Each row is
+     * processed in its own transaction so one bad row doesn't sink the batch.
+     * Passwords are generated (never taken from the sheet) and handed back
+     * once so HR can share them.
+     */
+    public function importStore(Request $request)
+    {
+        $this->authorize('create-employee');
+
+        $request->validate([
+            'import_file' => 'required|file|mimes:csv,txt|max:5120',
+        ]);
+
+        $filePath = $request->file('import_file')->getRealPath();
+        $data = array_map('str_getcsv', file($filePath));
+        if (count($data) < 2) {
+            return response()->json(['success' => false, 'message' => 'The uploaded file is empty or missing data rows.']);
+        }
+
+        $headers = array_map(function ($h) {
+            return trim(preg_replace('/[\xef\xbb\xbf]/', '', $h));
+        }, $data[0]);
+        unset($data[0]);
+
+        $expectedHeaders = ['Full Name', 'Email', 'Position', 'Contact No', 'Emergency No', 'Gender', 'Joining Date', 'Probation (Months)', 'Shift Name'];
+        foreach ($expectedHeaders as $expected) {
+            if (!in_array($expected, $headers)) {
+                return response()->json(['success' => false, 'message' => "Invalid template format. Missing column: {$expected}"]);
+            }
+        }
+
+        $shifts = Shift::all(['id', 'shift_name']);
+        $roles = Role::all(['id', 'name']);
+        $seenEmails = [];
+        $created = [];
+        $errors = [];
+        $successCount = 0;
+        $failedCount = 0;
+
+        foreach ($data as $index => $row) {
+            $rowNum = $index + 1;
+            if (count($headers) !== count($row)) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Column count mismatch.";
+                continue;
+            }
+
+            $rowData = array_combine($headers, array_map('trim', $row));
+
+            if (empty(array_filter($rowData))) {
+                continue; // blank trailing row
+            }
+
+            $name = $rowData['Full Name'] ?? '';
+            $email = strtolower($rowData['Email'] ?? '');
+            $position = $rowData['Position'] ?? '';
+            $contactNo = $rowData['Contact No'] ?? '';
+            $emergencyNo = $rowData['Emergency No'] ?? '';
+            $gender = strtolower($rowData['Gender'] ?? '');
+            $joiningDateStr = $rowData['Joining Date'] ?? '';
+            $probation = $rowData['Probation (Months)'] ?? '';
+            $shiftName = $rowData['Shift Name'] ?? '';
+            $roleName = strtolower(trim($rowData['Role'] ?? '')) ?: 'employee';
+            $salary = $rowData['Salary'] ?? null;
+
+            if (empty($name) || empty($email) || empty($position) || empty($contactNo) || empty($emergencyNo) || empty($gender) || empty($joiningDateStr) || $probation === '' || empty($shiftName)) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Missing required fields.";
+                continue;
+            }
+
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Invalid email '{$email}'.";
+                continue;
+            }
+
+            if (isset($seenEmails[$email])) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Duplicate email '{$email}' also used in row {$seenEmails[$email]} of this file.";
+                continue;
+            }
+
+            if (User::where('email', $email)->exists()) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Email '{$email}' already exists in the system.";
+                continue;
+            }
+
+            if (!in_array($gender, ['male', 'female'])) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Gender must be 'male' or 'female'.";
+                continue;
+            }
+
+            try {
+                $joiningDate = Carbon::parse($joiningDateStr)->toDateString();
+            } catch (\Exception $e) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Invalid Joining Date '{$joiningDateStr}'.";
+                continue;
+            }
+
+            $shift = $shifts->first(fn($s) => strtolower($s->shift_name) === strtolower($shiftName));
+            if (!$shift) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Shift '{$shiftName}' does not exist.";
+                continue;
+            }
+
+            $role = $roles->first(fn($r) => strtolower($r->name) === $roleName);
+            if (!$role) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Role '{$roleName}' does not exist.";
+                continue;
+            }
+
+            $seenEmails[$email] = $rowNum;
+
+            DB::beginTransaction();
+            try {
+                $tempPassword = Str::password(10, true, true, false, false);
+
+                $user = User::create([
+                    'name' => $name,
+                    'email' => $email,
+                    'password' => Hash::make($tempPassword),
+                ]);
+                $user->roles()->attach($role->id);
+
+                $employee = Employee::create([
+                    'user_id' => $user->id,
+                    'name' => $name,
+                    'email' => $email,
+                    'position' => $position,
+                    'joining_date' => $joiningDate,
+                    'probation' => (int) $probation,
+                    'contact_no' => $contactNo,
+                    'emergency_no' => $emergencyNo,
+                    'gender' => $gender,
+                    'salary' => $salary !== null && $salary !== '' ? $salary : null,
+                    'branch_id' => auth()->user()->employee->branch_id ?? null,
+                ]);
+
+                $employee->shifts()->attach($shift->id, ['assigned_at' => now()]);
+
+                foreach (['late_grace_minutes' => '5', 'time_zone' => 'Asia/Karachi'] as $key => $value) {
+                    EmployeeSetting::create([
+                        'emp_id' => $employee->id,
+                        'setting_name' => $key,
+                        'setting_value' => $value,
+                        'updated_by' => auth()->id() ?? 1,
+                    ]);
+                }
+
+                ActivityLogger::log(
+                    'create',
+                    'Employee',
+                    ActivityLogger::format('create', 'Employee', $employee->name, $employee->id) . ' (bulk import)'
+                );
+
+                DB::commit();
+                $successCount++;
+                $created[] = ['name' => $name, 'email' => $email, 'password' => $tempPassword];
+            } catch (\Exception $e) {
+                DB::rollBack();
+                \Log::error('Employee bulk import row failed: ' . $e->getMessage());
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Database error -> " . $e->getMessage();
+            }
+        }
+
+        $message = "Import completed. Successfully onboarded: {$successCount}.";
+        if ($failedCount > 0) {
+            $message .= " Failed: {$failedCount}.";
+        }
+
+        return response()->json([
+            'success' => $failedCount === 0,
+            'message' => $message,
+            'errors' => $errors,
+            'created' => $created,
+        ]);
     }
 
     /**

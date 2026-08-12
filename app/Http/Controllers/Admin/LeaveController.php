@@ -661,11 +661,13 @@ class LeaveController extends Controller
                 $leave->status = $hasLead ? 'Pending_Lead' : 'Pending';
                 $leave->approved_by = null;
             } else {
-                // Admin logging a manual record for someone else
+                // HR/admin logging this on the employee's behalf — it's already
+                // decided, so approve it and deduct the balance in the same step.
                 $leave->status = 'Approved';
                 $leave->approved_by = Auth::id();
+                $leave->is_balance_deducted = true;
             }
-            
+
             $leave->save();
 
             return response()->json(['success' => true, 'message' => 'Record logged successfully.']);

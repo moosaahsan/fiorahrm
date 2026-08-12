@@ -12,6 +12,10 @@
 
 @section('button')
     @can('create-employee')
+        <button type="button" class="btn-premium-back mr-2" id="btnBulkImportEmployees">
+            <i class="fas fa-file-upload"></i>
+            <span>Bulk Import</span>
+        </button>
         <a href="{{ route('admin.employees.create') }}" class="btn-premium-add">
             <i class="fas fa-plus-circle"></i>
             <span>Onboard New Talent</span>
@@ -24,6 +28,20 @@
     <div class="container-fluid workforce-directory-page">
         @include('includes.flash')
         @include('includes.ajax_modal')
+
+        <!-- Bulk Import Employees Modal -->
+        <div class="modal fade" id="bulkImportEmployeesModal" tabindex="-1" role="dialog" aria-hidden="true">
+            <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+                <div class="modal-content border-0 shadow-lg" style="border-radius: 24px; overflow: hidden;">
+                    <div id="bulkImportEmployeesModalContent">
+                        <div class="text-center py-5">
+                            <div class="spinner-border text-primary" role="status"></div>
+                            <p class="mt-2 text-muted small text-uppercase fw-bold">Loading...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
 
         <!-- Workforce status toggle -->
         <div class="workforce-segment mb-4" id="employeeTabs" role="tablist" aria-label="Workforce status">
@@ -109,6 +127,11 @@
 @push('scripts')
     <script>
         $(document).ready(function () {
+            $('#btnBulkImportEmployees').on('click', function () {
+                $('#bulkImportEmployeesModal').modal('show');
+                $('#bulkImportEmployeesModalContent').load("{{ route('admin.employees.import.modal') }}");
+            });
+
             // Destroy existing for clean init
             if ($.fn.DataTable.isDataTable('#employees-table')) { $('#employees-table').DataTable().destroy(); }
 

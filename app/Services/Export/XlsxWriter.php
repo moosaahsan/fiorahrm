@@ -26,6 +26,15 @@ class XlsxWriter
     protected array $sheets = [];
 
     /**
+     * ColoredCell combos discovered across all sheets, keyed by "BG:COLOR",
+     * mapped to the cellXfs index they'll be rendered with. Built once in
+     * save() so the style sheet only contains the combos actually used.
+     *
+     * @var array<string, int>
+     */
+    protected array $colorStyleIds = [];
+
+    /**
      * Add a sheet. The first row is styled as a header.
      *
      * @param  array<int, array<int, mixed>>  $rows
@@ -58,6 +67,8 @@ class XlsxWriter
             // Excel rejects a workbook with no sheets.
             $this->addSheet('Sheet1', []);
         }
+
+        $this->registerColorStyles();
 
         $zip = new ZipArchive();
 
@@ -148,26 +159,73 @@ class XlsxWriter
     }
 
     /**
-     * Two cell formats: 0 is plain, 1 is the bold header on a light fill.
+     * Scans every sheet for ColoredCell values and assigns each unique
+     * background/color combo a cellXfs index, starting after the 2 built-in
+     * styles (0 = plain, 1 = header).
+     */
+    protected function registerColorStyles(): void
+    {
+        $this->colorStyleIds = [];
+
+        foreach ($this->sheets as $sheet) {
+            foreach ($sheet['rows'] as $row) {
+                foreach ($row as $value) {
+                    if (! $value instanceof ColoredCell) {
+                        continue;
+                    }
+
+                    $key = strtoupper($value->background) . ':' . strtoupper($value->color);
+
+                    if (! isset($this->colorStyleIds[$key])) {
+                        $this->colorStyleIds[$key] = 2 + count($this->colorStyleIds);
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Two built-in cell formats: 0 is plain, 1 is the bold header on a light
+     * fill. Any ColoredCell combos discovered by registerColorStyles() get an
+     * extra font+fill+xf appended after those, in assignment order.
      */
     protected function styles(): string
     {
+        $extraFonts = '';
+        $extraFills = '';
+        $extraXfs = '';
+
+        foreach ($this->colorStyleIds as $key => $xfId) {
+            [$bg, $color] = explode(':', $key);
+            $extraFonts .= '<font><sz val="11"/><color rgb="FF' . $color . '"/><name val="Calibri"/></font>';
+            $extraFills .= '<fill><patternFill patternType="solid"><fgColor rgb="FF' . $bg . '"/><bgColor indexed="64"/></patternFill></fill>';
+            $extraXfs .= '<xf numFmtId="0" fontId="' . $xfId . '" fillId="' . (1 + $xfId) . '" borderId="0" xfId="0"'
+                . ' applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>';
+        }
+
+        $fontCount = 2 + count($this->colorStyleIds);
+        $fillCount = 3 + count($this->colorStyleIds);
+        $xfCount = 2 + count($this->colorStyleIds);
+
         return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             . '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-            . '<fonts count="2">'
+            . '<fonts count="' . $fontCount . '">'
             . '<font><sz val="11"/><name val="Calibri"/></font>'
             . '<font><b/><sz val="11"/><color rgb="FF1F2937"/><name val="Calibri"/></font>'
+            . $extraFonts
             . '</fonts>'
-            . '<fills count="3">'
+            . '<fills count="' . $fillCount . '">'
             . '<fill><patternFill patternType="none"/></fill>'
             . '<fill><patternFill patternType="gray125"/></fill>'
             . '<fill><patternFill patternType="solid"><fgColor rgb="FFEEF2FF"/><bgColor indexed="64"/></patternFill></fill>'
+            . $extraFills
             . '</fills>'
             . '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
             . '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
-            . '<cellXfs count="2">'
+            . '<cellXfs count="' . $xfCount . '">'
             . '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>'
             . '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/>'
+            . $extraXfs
             . '</cellXfs>'
             . '</styleSheet>';
     }
@@ -213,7 +271,13 @@ class XlsxWriter
 
     protected function cellXml(string $reference, mixed $value, bool $isHeader): string
     {
-        $style = $isHeader ? ' s="1"' : '';
+        if ($value instanceof ColoredCell) {
+            $key = strtoupper($value->background) . ':' . strtoupper($value->color);
+            $style = ' s="' . $this->colorStyleIds[$key] . '"';
+            $value = $value->value;
+        } else {
+            $style = $isHeader ? ' s="1"' : '';
+        }
 
         if ($value === null || $value === '') {
             return '<c r="' . $reference . '"' . $style . '/>';

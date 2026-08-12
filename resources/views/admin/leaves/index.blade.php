@@ -215,7 +215,7 @@
                     </div>
                     <div class="modal-footer border-top-0 px-4 py-4 d-flex justify-content-between align-items-center" style="border-bottom-left-radius: 24px; border-bottom-right-radius: 24px; background: #f8fafc !important;">
                         <button type="button" class="btn fw-bold px-4" data-dismiss="modal" style="color: #64748b; font-size: 0.95rem; background: #e2e8f0; border-radius: 12px; height: 48px;">Dismiss Form</button>
-                        <button type="submit" class="btn fw-bold px-5 shadow-sm d-flex align-items-center justify-content-center" style="background: var(--primary-gradient); color: #ffffff; border:none; border-radius: 12px; height: 48px; font-size: 0.95rem;">
+                        <button type="submit" class="btn fw-bold px-5 shadow-sm d-flex align-items-center justify-content-center" style="background: linear-gradient(135deg, #6366f1 0%, #4338ca 100%); color: #ffffff; border:none; border-radius: 12px; height: 48px; font-size: 0.95rem;">
                             <i class="bi bi-send-fill mr-2" style="transform: rotate(45deg); margin-top: -3px;"></i> Submit Request
                         </button>
                     </div>

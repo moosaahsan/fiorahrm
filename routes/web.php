@@ -78,6 +78,9 @@ Route::middleware(['auth', 'is_admin'])->prefix('admin')->group(function () {
         Route::get('employees', [EmployeeController::class, 'index'])->name('admin.employees.index');
         // Registered before the resource so it is not swallowed by employees/{employee}.
         Route::get('employees/{id}/export', [EmployeeController::class, 'exportExcel'])->name('admin.employees.export');
+        Route::get('employees/import/modal', [EmployeeController::class, 'importModal'])->name('admin.employees.import.modal');
+        Route::get('employees/import/template', [EmployeeController::class, 'importTemplate'])->name('admin.employees.import.template');
+        Route::post('employees/import/store', [EmployeeController::class, 'importStore'])->name('admin.employees.import.store');
         Route::resource('employees', EmployeeController::class)->except(['index', 'show'])->names('admin.employees');
         Route::get('employees/{employee}', [EmployeeController::class, 'show'])->name('admin.employees.show');
         Route::get('employees/{id}/cnic/{side}', [EmployeeController::class, 'viewCnic'])->name('admin.employees.cnic.view');

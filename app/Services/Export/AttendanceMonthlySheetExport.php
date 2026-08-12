@@ -102,16 +102,18 @@ class AttendanceMonthlySheetExport
 
     /**
      * Mirrors the status rules in MonthlyAttendanceController@monthlyData, in
-     * the same precedence order, but returns plain text instead of a badge.
+     * the same precedence order, and the same badge colors from the
+     * .z-badge-* classes in admin.css so the sheet reads the same as the
+     * on-screen view.
      */
-    protected function dayStatus(Employee $employee, Carbon $date, $attendanceByDate, $leaveByDate): string
+    protected function dayStatus(Employee $employee, Carbon $date, $attendanceByDate, $leaveByDate): ColoredCell|string
     {
         $key = $date->format('Y-m-d');
         $attendance = $attendanceByDate->get($key);
 
         if ($attendance && $attendance->check_in) {
             if ($attendance->halfDay) {
-                return 'Half Day';
+                return $this->colored('Half Day', 'FFFBE6', 'D48806');
             }
 
             if ($attendance->status === 'Early Leave') {
@@ -120,17 +122,20 @@ class AttendanceMonthlySheetExport
 
             if ($attendance->lateArrival) {
                 $minutes = (int) ($attendance->lateArrival->late_minutes ?? 0);
+                $label = $minutes > 0 ? 'Late (' . format_minutes_to_hm($minutes) . ')' : 'Late';
 
-                return $minutes > 0 ? 'Late (' . format_minutes_to_hm($minutes) . ')' : 'Late';
+                return $this->colored($label, 'FFF1F0', 'CF1322');
             }
 
-            return 'Present';
+            return $this->colored('Present', 'E7F6ED', '0F7D45');
         }
 
         $leaveStatus = $leaveByDate->get($key);
 
         if ($leaveStatus) {
-            return $leaveStatus === 'Approved' ? 'Approved Leave' : 'Pending Leave';
+            return $leaveStatus === 'Approved'
+                ? $this->colored('Approved Leave', 'F6FFED', '389E0D')
+                : $this->colored('Pending Leave', 'FFF7E6', 'D46B08');
         }
 
         $offDay = $this->offDaysFor((int) $date->year)->first(function ($offDay) use ($date, $employee) {
@@ -142,11 +147,13 @@ class AttendanceMonthlySheetExport
         });
 
         if ($offDay) {
-            return $offDay->type === 'Holiday' ? 'Holiday' : 'Off';
+            return $offDay->type === 'Holiday'
+                ? $this->colored('Holiday', 'E6F7FF', '096DD9')
+                : $this->colored('Off', 'F5F5F5', '595959');
         }
 
         if (WorkingDayService::isWeeklyOffDay($date)) {
-            return 'Off';
+            return $this->colored('Off', 'F5F5F5', '595959');
         }
 
         if ($employee->joining_date && $date->lt(Carbon::parse($employee->joining_date)->startOfDay())) {
@@ -154,14 +161,19 @@ class AttendanceMonthlySheetExport
         }
 
         if ($date->isFuture()) {
-            return 'Upcoming';
+            return $this->colored('Upcoming', 'FAFAFA', 'BFBFBF');
         }
 
         if ($employee->resign_date && $date->gt(Carbon::parse($employee->resign_date))) {
             return '';
         }
 
-        return 'Absent';
+        return $this->colored('Absent', 'FFF1F0', 'CF1322');
+    }
+
+    protected function colored(string $label, string $background, string $color): ColoredCell
+    {
+        return new ColoredCell($label, $background, $color);
     }
 
     /**
