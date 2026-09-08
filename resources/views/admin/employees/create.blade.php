@@ -44,9 +44,22 @@
                         </div>
                         <div class="col-md-6 mb-4 employee-specific">
                             <div class="form-group">
+                                <label>Father's Name</label>
+                                <input type="text" class="saas-input" placeholder="e.g. Muhammad Ahmed"
+                                    name="father_name" />
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-4 employee-specific">
+                            <div class="form-group">
                                 <label>Job Designation</label>
                                 <input type="text" class="saas-input" placeholder="e.g. Senior Laravel Developer"
                                     name="position" required />
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-4 employee-specific">
+                            <div class="form-group">
+                                <label>CNIC Number</label>
+                                <input type="text" class="saas-input" placeholder="XXXXX-XXXXXXX-X" name="cnic" />
                             </div>
                         </div>
                         <div class="col-md-6 mb-4">
@@ -140,6 +153,19 @@
                                         required />
                                 </div>
                             </div>
+                            <div class="col-md-6 mb-4">
+                                <div class="form-group">
+                                    <label>Emergency Contact Relationship</label>
+                                    <input type="text" class="saas-input" placeholder="e.g. Brother, Father, Spouse"
+                                        name="emergency_relationship" />
+                                </div>
+                            </div>
+                            <div class="col-md-12 mb-4">
+                                <div class="form-group">
+                                    <label>Residential Address</label>
+                                    <textarea class="saas-input" name="address" rows="2" placeholder="House #, Street, City"></textarea>
+                                </div>
+                            </div>
                             @if (auth()->user()->hasRole(['admin', 'administrator']))
                                 <div class="col-md-12">
                                     <div class="form-group">
@@ -165,6 +191,17 @@
                                                 {{ $schedule->shift_name }} ({{ $schedule->start_time }} to
                                                 {{ $schedule->end_time }})
                                             </option>
+                                        @endforeach
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="col-md-6 mb-4">
+                                <div class="form-group">
+                                    <label>Department</label>
+                                    <select class="saas-input saas-select" name="department_id">
+                                        <option value="">-- No Department --</option>
+                                        @foreach ($departments as $department)
+                                            <option value="{{ $department->id }}">{{ $department->name }}</option>
                                         @endforeach
                                     </select>
                                 </div>
@@ -271,7 +308,7 @@
                         $('.employee-specific input, .employee-specific select').prop('required', false);
                     } else {
                         $('.employee-specific').slideDown(500);
-                        $('.employee-specific input:not([name="salary"]):not([name="dob"]):not([name="bank_name"]):not([name="bank_account_name"]):not([name="account_number"]):not([name="iban"]):not([name="branch_code"]):not([name="team_id"]), .employee-specific select:not([name="team_id"])').prop('required', true);
+                        $('.employee-specific input:not([name="salary"]):not([name="dob"]):not([name="bank_name"]):not([name="bank_account_name"]):not([name="account_number"]):not([name="iban"]):not([name="branch_code"]):not([name="team_id"]):not([name="father_name"]):not([name="cnic"]):not([name="address"]):not([name="emergency_relationship"]), .employee-specific select:not([name="team_id"]):not([name="department_id"])').prop('required', true);
                     }
                 });
 

@@ -38,6 +38,9 @@ Route::post('logout', [AuthController::class, 'logout']);
 Route::get('/external/jobs', [\App\Http\Controllers\Admin\JobPostingController::class, 'getPublicJobs']);
 Route::post('/external/apply', [\App\Http\Controllers\Admin\InterviewController::class, 'storePublic'])->middleware('throttle:3,1');
 
+// ✅ FINGERPRINT DEVICE BRIDGE (secret-key protected, not a logged-in user — see tools/device-bridge)
+Route::post('/device/punch', [\App\Http\Controllers\Api\DevicePunchController::class, 'store'])->middleware('throttle:120,1');
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('checkin', [EmployeeController::class, 'checkIn']);
     Route::get('get-activity', [EmployeeController::class, 'getActivity']);

@@ -64,6 +64,13 @@
                                 </div>
                                 <div class="col-md-6 mb-4">
                                     <div class="form-group">
+                                        <label>Father's Name</label>
+                                        <input type="text" class="saas-input" value="{{ $employee->father_name }}"
+                                            name="father_name" />
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-4">
+                                    <div class="form-group">
                                         <label>Company Email</label>
                                         <input type="email" class="saas-input" value="{{ $employee->email }}" name="email"
                                             required />
@@ -74,6 +81,20 @@
                                         <label>Job Designation</label>
                                         <input type="text" class="saas-input" value="{{ $employee->position }}"
                                             name="position" required />
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-4">
+                                    <div class="form-group">
+                                        <label>CNIC Number</label>
+                                        <input type="text" class="saas-input" value="{{ $employee->cnic }}"
+                                            name="cnic" placeholder="XXXXX-XXXXXXX-X" />
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-4">
+                                    <div class="form-group">
+                                        <label>Fingerprint Device User ID</label>
+                                        <input type="text" class="saas-input" value="{{ $employee->device_user_id }}"
+                                            name="device_user_id" placeholder="ID set on the ZKTeco device when enrolling this employee" />
                                     </div>
                                 </div>
                             </div>
@@ -174,6 +195,18 @@
                                 </select>
                             </div>
                         </div>
+                        <div class="col-md-4 mb-4">
+                            <div class="form-group">
+                                <label>Department</label>
+                                <select class="saas-input saas-select" name="department_id">
+                                    <option value="">-- No Department --</option>
+                                    @foreach ($departments as $department)
+                                        <option value="{{ $department->id }}" {{ $employee->department_id == $department->id ? 'selected' : '' }}>
+                                            {{ $department->name }}</option>
+                                    @endforeach
+                                </select>
+                            </div>
+                        </div>
                         <div class="col-md-6 mb-4">
                             <div class="form-group">
                                 <label>Operating Shift</label>
@@ -235,6 +268,19 @@
                                 <label>Emergency Contact</label>
                                 <input type="text" class="saas-input" name="emergency_no"
                                     value="{{ $employee->emergency_no }}" required />
+                            </div>
+                        </div>
+                        <div class="col-md-6 mb-4">
+                            <div class="form-group">
+                                <label>Emergency Contact Relationship</label>
+                                <input type="text" class="saas-input" name="emergency_relationship"
+                                    value="{{ $employee->emergency_relationship }}" placeholder="e.g. Brother, Father, Spouse" />
+                            </div>
+                        </div>
+                        <div class="col-md-12 mb-4">
+                            <div class="form-group">
+                                <label>Residential Address</label>
+                                <textarea class="saas-input" name="address" rows="2" placeholder="House #, Street, City">{{ $employee->address }}</textarea>
                             </div>
                         </div>
                         @if (auth()->user()->hasRole(['admin', 'administrator']))

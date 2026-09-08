@@ -14,6 +14,7 @@ use Yajra\DataTables\DataTables;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Storage;
 use App\Models\Role;
+use App\Models\Department;
 use App\Models\EmployeeSetting;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Response as ResponseFacade;
@@ -184,9 +185,10 @@ class EmployeeController extends Controller
         $teams = \App\Models\Team::accessible()->get();
         $branches = \App\Models\Branch::accessible()->where('is_active', true)->get();
         $salary_structures = \App\Models\SalaryStructure::accessible()->get();
+        $departments = \App\Models\Department::where('is_active', true)->orderBy('name')->get();
         ActivityLogger::log('view', 'Employee', ActivityLogger::format('view', 'Employee', 'All Records', 'Listing'));
 
-        return view('admin.employees.index', compact('schedules', 'roles', 'teams', 'branches', 'salary_structures'));
+        return view('admin.employees.index', compact('schedules', 'roles', 'teams', 'branches', 'salary_structures', 'departments'));
     }
 
     public function create()
@@ -203,14 +205,15 @@ class EmployeeController extends Controller
         $teams = \App\Models\Team::accessible()->get();
         $branches = \App\Models\Branch::accessible()->where('is_active', true)->get();
         $salary_structures = \App\Models\SalaryStructure::accessible()->get();
+        $departments = \App\Models\Department::where('is_active', true)->orderBy('name')->get();
 
-        return view('admin.employees.create', compact('schedules', 'roles', 'teams', 'branches', 'salary_structures'));
+        return view('admin.employees.create', compact('schedules', 'roles', 'teams', 'branches', 'salary_structures', 'departments'));
     }
 
     public function edit($id)
     {
         $this->authorize('edit-employee');
-        $employee = Employee::accessible()->with(['user.roles', 'team', 'branch'])->findOrFail($id);
+        $employee = Employee::accessible()->with(['user.roles', 'team', 'branch', 'department'])->findOrFail($id);
         $schedules = Shift::accessible()->get();
         $roles = Role::all();
 
@@ -222,6 +225,7 @@ class EmployeeController extends Controller
         $teams = \App\Models\Team::accessible()->get();
         $branches = \App\Models\Branch::accessible()->where('is_active', true)->get();
         $salary_structures = \App\Models\SalaryStructure::accessible()->get();
+        $departments = \App\Models\Department::where('is_active', true)->orderBy('name')->get();
 
         // Leave entitlement for this employee, so HR can allocate per person.
         $leaveYear = (int) now()->year;
@@ -230,7 +234,7 @@ class EmployeeController extends Controller
         $leaveEligibleFrom = \App\Services\LeaveService::entitlementStartDate($employee);
 
         return view('admin.employees.edit', compact(
-            'employee', 'schedules', 'roles', 'teams', 'branches', 'salary_structures',
+            'employee', 'schedules', 'roles', 'teams', 'branches', 'salary_structures', 'departments',
             'leaveTypes', 'leaveBalances', 'leaveYear', 'leaveEligibleFrom'
         ));
     }
@@ -295,18 +299,21 @@ class EmployeeController extends Controller
         ];
 
         $columns = [
-            'Full Name', 'Email', 'Position', 'Contact No', 'Emergency No',
-            'Gender', 'Joining Date', 'Probation (Months)', 'Shift Name', 'Role', 'Salary',
+            'Full Name', 'Father Name', 'Email', 'Department', 'Position', 'Contact No', 'Emergency No',
+            'Relationship', 'CNIC #', 'D.O.B', 'Address', 'Gender', 'Joining Date',
+            'Probation (Months)', 'Shift Name', 'Role', 'Salary', 'Account Status',
         ];
 
         $shiftName = Shift::query()->value('shift_name') ?? 'Morning';
+        $departmentName = Department::query()->value('name') ?? 'Front Office';
 
-        $callback = function () use ($columns, $shiftName) {
+        $callback = function () use ($columns, $shiftName, $departmentName) {
             $file = fopen('php://output', 'w');
             fputcsv($file, $columns);
             fputcsv($file, [
-                'John Smith', 'john.smith@example.com', 'Front Desk Officer', '03001234567',
-                '03007654321', 'male', '2026-08-15', '3', $shiftName, 'employee', '50000',
+                'John Smith', 'Robert Smith', 'john.smith@example.com', $departmentName, 'Front Desk Officer',
+                '03001234567', '03007654321', 'Brother', '3520112345671', '1995-05-20',
+                '123 Main Street, Lahore', 'male', '2026-08-15', '3', $shiftName, 'employee', '50000', 'On Probation',
             ]);
             fclose($file);
         };
@@ -345,15 +352,13 @@ class EmployeeController extends Controller
         }, $data[0]);
         unset($data[0]);
 
-        $expectedHeaders = ['Full Name', 'Email', 'Position', 'Contact No', 'Emergency No', 'Gender', 'Joining Date', 'Probation (Months)', 'Shift Name'];
-        foreach ($expectedHeaders as $expected) {
-            if (!in_array($expected, $headers)) {
-                return response()->json(['success' => false, 'message' => "Invalid template format. Missing column: {$expected}"]);
-            }
+        if (!in_array('Full Name', $headers)) {
+            return response()->json(['success' => false, 'message' => "Invalid template format. Missing column: Full Name"]);
         }
 
         $shifts = Shift::all(['id', 'shift_name']);
         $roles = Role::all(['id', 'name']);
+        $departments = Department::all(['id', 'name']);
         $seenEmails = [];
         $created = [];
         $errors = [];
@@ -375,27 +380,44 @@ class EmployeeController extends Controller
             }
 
             $name = $rowData['Full Name'] ?? '';
+            $fatherName = $rowData['Father Name'] ?? null;
             $email = strtolower($rowData['Email'] ?? '');
+            $departmentName = $rowData['Department'] ?? '';
             $position = $rowData['Position'] ?? '';
             $contactNo = $rowData['Contact No'] ?? '';
             $emergencyNo = $rowData['Emergency No'] ?? '';
+            $emergencyRelationship = $rowData['Relationship'] ?? null;
+            $cnic = $rowData['CNIC #'] ?? null;
+            $dobStr = $rowData['D.O.B'] ?? '';
+            $address = $rowData['Address'] ?? null;
             $gender = strtolower($rowData['Gender'] ?? '');
             $joiningDateStr = $rowData['Joining Date'] ?? '';
             $probation = $rowData['Probation (Months)'] ?? '';
             $shiftName = $rowData['Shift Name'] ?? '';
             $roleName = strtolower(trim($rowData['Role'] ?? '')) ?: 'employee';
             $salary = $rowData['Salary'] ?? null;
+            // "Account Status" on this sheet means probation state (On Probation / Confirmed),
+            // not whether the login account is active.
+            $accountStatus = strtolower(trim($rowData['Account Status'] ?: 'on probation'));
 
-            if (empty($name) || empty($email) || empty($position) || empty($contactNo) || empty($emergencyNo) || empty($gender) || empty($joiningDateStr) || $probation === '' || empty($shiftName)) {
+            // Only a name is truly required. Everything else gets a sensible
+            // default when the sheet leaves it blank — HR is bulk-loading
+            // real employee records here, not creating login accounts, so
+            // this shouldn't block on data the sheet never tracked.
+            if (empty($name)) {
                 $failedCount++;
-                $errors[] = "Row {$rowNum}: Missing required fields.";
+                $errors[] = "Row {$rowNum}: Missing required field: Full Name.";
                 continue;
             }
 
-            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            if (!empty($email) && !filter_var($email, FILTER_VALIDATE_EMAIL)) {
                 $failedCount++;
                 $errors[] = "Row {$rowNum}: Invalid email '{$email}'.";
                 continue;
+            }
+
+            if (empty($email)) {
+                $email = $this->generateUniqueEmployeeEmail($name, $seenEmails);
             }
 
             if (isset($seenEmails[$email])) {
@@ -411,23 +433,49 @@ class EmployeeController extends Controller
             }
 
             if (!in_array($gender, ['male', 'female'])) {
-                $failedCount++;
-                $errors[] = "Row {$rowNum}: Gender must be 'male' or 'female'.";
-                continue;
+                $gender = 'male';
             }
 
-            try {
-                $joiningDate = Carbon::parse($joiningDateStr)->toDateString();
-            } catch (\Exception $e) {
-                $failedCount++;
-                $errors[] = "Row {$rowNum}: Invalid Joining Date '{$joiningDateStr}'.";
-                continue;
+            $position = $position ?: 'Staff';
+            $probation = $probation === '' ? '0' : $probation;
+
+            if (empty($joiningDateStr)) {
+                $joiningDate = now()->toDateString();
+            } else {
+                try {
+                    $joiningDate = Carbon::parse($joiningDateStr)->toDateString();
+                } catch (\Exception $e) {
+                    $failedCount++;
+                    $errors[] = "Row {$rowNum}: Invalid Joining Date '{$joiningDateStr}'.";
+                    continue;
+                }
             }
 
-            $shift = $shifts->first(fn($s) => strtolower($s->shift_name) === strtolower($shiftName));
+            $dob = null;
+            if (!empty($dobStr)) {
+                try {
+                    $dob = Carbon::parse($dobStr)->toDateString();
+                } catch (\Exception $e) {
+                    $failedCount++;
+                    $errors[] = "Row {$rowNum}: Invalid D.O.B '{$dobStr}'.";
+                    continue;
+                }
+            }
+
+            if (empty($shiftName)) {
+                $shift = $shifts->first();
+            } else {
+                $shift = $shifts->first(fn($s) => strtolower($s->shift_name) === strtolower($shiftName));
+                if (!$shift) {
+                    $failedCount++;
+                    $errors[] = "Row {$rowNum}: Shift '{$shiftName}' does not exist.";
+                    continue;
+                }
+            }
+
             if (!$shift) {
                 $failedCount++;
-                $errors[] = "Row {$rowNum}: Shift '{$shiftName}' does not exist.";
+                $errors[] = "Row {$rowNum}: No shifts are set up in the system yet — create one first.";
                 continue;
             }
 
@@ -435,6 +483,30 @@ class EmployeeController extends Controller
             if (!$role) {
                 $failedCount++;
                 $errors[] = "Row {$rowNum}: Role '{$roleName}' does not exist.";
+                continue;
+            }
+
+            $department = null;
+            if (!empty($departmentName)) {
+                $department = $departments->first(fn($d) => strtolower($d->name) === strtolower($departmentName));
+                if (!$department) {
+                    // Sheet references a department that doesn't exist yet — create it
+                    // on the fly so HR doesn't have to pre-create every department
+                    // before running a bulk import.
+                    $department = Department::create([
+                        'name' => $departmentName,
+                        'slug' => Str::slug($departmentName),
+                        'branch_id' => auth()->user()->employee->branch_id ?? null,
+                    ]);
+                    $departments->push($department);
+                }
+            }
+
+            $isConfirmed = str_contains($accountStatus, 'confirm'); // matches "Confirmed" and the "Conformed" typo
+            $isOnProbation = str_contains($accountStatus, 'probation');
+            if (!$isConfirmed && !$isOnProbation) {
+                $failedCount++;
+                $errors[] = "Row {$rowNum}: Account Status must be 'On Probation' or 'Confirmed'.";
                 continue;
             }
 
@@ -454,14 +526,25 @@ class EmployeeController extends Controller
                 $employee = Employee::create([
                     'user_id' => $user->id,
                     'name' => $name,
+                    'father_name' => $fatherName ?: null,
                     'email' => $email,
+                    'department_id' => $department->id ?? null,
                     'position' => $position,
                     'joining_date' => $joiningDate,
                     'probation' => (int) $probation,
-                    'contact_no' => $contactNo,
-                    'emergency_no' => $emergencyNo,
+                    'contact_no' => $contactNo ?: null,
+                    'emergency_no' => $emergencyNo ?: null,
+                    'emergency_relationship' => $emergencyRelationship ?: null,
+                    'cnic' => $cnic ?: null,
+                    'dob' => $dob,
+                    'address' => $address ?: null,
                     'gender' => $gender,
                     'salary' => $salary !== null && $salary !== '' ? $salary : null,
+                    // Confirmed employees are past probation; estimate the confirmation
+                    // date from joining date + probation length since the sheet doesn't
+                    // carry an exact date.
+                    'confirmed_at' => $isConfirmed ? Carbon::parse($joiningDate)->addMonths((int) $probation)->toDateString() : null,
+                    'status' => 1,
                     'branch_id' => auth()->user()->employee->branch_id ?? null,
                 ]);
 
@@ -504,6 +587,28 @@ class EmployeeController extends Controller
             'errors' => $errors,
             'created' => $created,
         ]);
+    }
+
+    /**
+     * Placeholder login email for an imported employee whose sheet had none.
+     * These employees aren't expected to log in yet, so this just needs to
+     * be a valid, unique value to satisfy the account record.
+     */
+    private function generateUniqueEmployeeEmail(string $name, array $seenEmails): string
+    {
+        $domain = optional(User::whereNotNull('email')->where('email', 'like', '%@%')->first())->email;
+        $domain = $domain ? substr(strrchr($domain, '@'), 1) : 'fiorahotel.com';
+
+        $base = Str::slug($name, '.') ?: 'employee';
+        $candidate = $base . '@' . $domain;
+        $suffix = 1;
+
+        while (isset($seenEmails[$candidate]) || User::where('email', $candidate)->exists()) {
+            $suffix++;
+            $candidate = $base . $suffix . '@' . $domain;
+        }
+
+        return $candidate;
     }
 
     /**
@@ -645,6 +750,7 @@ class EmployeeController extends Controller
             'app_resp_grace_minutes' => 'nullable|integer|min:0',
             'time_zone' => 'nullable|string',
             'team_id' => 'nullable|exists:teams,id',
+            'department_id' => 'nullable|exists:departments,id',
             'branch_id' => 'nullable|exists:branches,id',
             'salary_structure_id' => 'nullable',
             'bank_name' => 'nullable|string|max:255',
@@ -652,6 +758,10 @@ class EmployeeController extends Controller
             'account_number' => 'nullable|string|max:255',
             'iban' => 'nullable|string|max:255',
             'branch_code' => 'nullable|string|max:255',
+            'father_name' => 'nullable|string|max:255',
+            'cnic' => 'nullable|string|max:255',
+            'address' => 'nullable|string|max:1000',
+            'emergency_relationship' => 'nullable|string|max:255',
         ];
 
         if (auth()->user()->hasRole(['admin', 'administrator'])) {
@@ -724,12 +834,16 @@ class EmployeeController extends Controller
             $employeeData = [
                 'user_id' => $user->id,
                 'name' => $validated['name'],
+                'father_name' => $validated['father_name'] ?? null,
                 'email' => strtolower($validated['email']),
                 'position' => $validated['position'],
                 'joining_date' => $validated['joining_date'],
                 'probation' => $validated['probation'],
                 'contact_no' => $validated['contact_no'],
                 'emergency_no' => $validated['emergency_no'],
+                'emergency_relationship' => $validated['emergency_relationship'] ?? null,
+                'address' => $validated['address'] ?? null,
+                'cnic' => $validated['cnic'] ?? null,
                 'gender' => $validated['gender'],
                 'dob' => $validated['dob'] ?? null,
                 'break_duration' => $validated['break_duration'] ?? 0,
@@ -740,6 +854,7 @@ class EmployeeController extends Controller
                 'leaves_allowed_in_year' => $validated['leaves_allowed_in_year'] ?? 16,
                 'idle_time_allowed' => $validated['idle_time_allowed'] ?? 0,
                 'team_id' => $validated['team_id'] ?? null,
+                'department_id' => $validated['department_id'] ?? null,
                 'branch_id' => $request->branch_id ?? (\App\Models\Team::find($request->team_id)->branch_id ?? (auth()->user()->employee->branch_id ?? null)),
                 'salary_structure_id' => null,
                 'bank_name' => $validated['bank_name'] ?? null,
@@ -818,6 +933,7 @@ class EmployeeController extends Controller
             'app_resp_grace_minutes' => 'nullable|integer|min:0',
             'time_zone' => 'nullable|string',
             'team_id' => 'nullable|exists:teams,id',
+            'department_id' => 'nullable|exists:departments,id',
             'branch_id' => 'nullable|exists:branches,id',
             'salary_structure_id' => 'nullable',
             'bank_name' => 'nullable|string|max:255',
@@ -825,6 +941,11 @@ class EmployeeController extends Controller
             'account_number' => 'nullable|string|max:255',
             'iban' => 'nullable|string|max:255',
             'branch_code' => 'nullable|string|max:255',
+            'father_name' => 'nullable|string|max:255',
+            'cnic' => 'nullable|string|max:255',
+            'device_user_id' => 'nullable|string|max:255|unique:employees,device_user_id,' . $employee->id,
+            'address' => 'nullable|string|max:1000',
+            'emergency_relationship' => 'nullable|string|max:255',
             'cnic_front' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
             'cnic_back' => 'nullable|file|mimes:pdf,jpg,jpeg,png|max:5120',
             // Per-employee leave entitlement, keyed by leave type slug.
@@ -898,12 +1019,17 @@ class EmployeeController extends Controller
         // Update EMPLOYEE record
         $employeeData = [
             'name' => $validated['name'],
+            'father_name' => $validated['father_name'] ?? $employee->father_name,
             'email' => $validated['email'],
             'position' => $validated['position'],
             'joining_date' => $validated['joining_date'],
             'probation' => $validated['probation'],
             'contact_no' => $validated['contact_no'],
             'emergency_no' => $validated['emergency_no'],
+            'emergency_relationship' => $validated['emergency_relationship'] ?? $employee->emergency_relationship,
+            'address' => $validated['address'] ?? $employee->address,
+            'cnic' => $validated['cnic'] ?? $employee->cnic,
+            'device_user_id' => $validated['device_user_id'] ?: null,
             'gender' => $validated['gender'],
             'dob' => $validated['dob'] ?? null,
             'profile_pic' => $employee->profile_pic,
@@ -914,6 +1040,7 @@ class EmployeeController extends Controller
             'app_resp_grace_minutes' => $validated['app_resp_grace_minutes'] ?? null,
             'time_zone' => $validated['time_zone'] ?? null,
             'team_id' => $validated['team_id'] ?? null,
+            'department_id' => $validated['department_id'] ?? null,
             'branch_id' => $request->branch_id ?? (\App\Models\Team::find($request->team_id)->branch_id ?? $employee->branch_id),
             'salary_structure_id' => null,
             'bank_name' => $validated['bank_name'] ?? null,

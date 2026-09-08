@@ -13,7 +13,12 @@ class Employee extends Model
     protected $appends = ['profile_pic_url', 'cover_pic_url'];
     protected $fillable = [
         'name',
+        'father_name',
         'cnic',
+        'device_user_id',
+        'address',
+        'emergency_relationship',
+        'department_id',
         'position',
         'joining_date',
         'probation',
@@ -75,6 +80,11 @@ class Employee extends Model
     public function branch()
     {
         return $this->belongsTo(Branch::class);
+    }
+
+    public function department()
+    {
+        return $this->belongsTo(Department::class);
     }
 
     public function user()

@@ -35,4 +35,8 @@ return [
         ],
     ],
 
+    'device_bridge' => [
+        'secret' => env('DEVICE_BRIDGE_SECRET'),
+    ],
+
 ];

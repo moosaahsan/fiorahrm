@@ -71,6 +71,21 @@
                                 <label>Contact Number</label>
                                 <input type="text" value="{{ $employee?->contact_no ?? $user->contact_no }}" class="form-control-premium" readonly style="opacity: 0.8; cursor: default;">
                             </div>
+
+                            <div class="form-group mb-3">
+                                <label>Father's Name</label>
+                                <input type="text" value="{{ $employee?->father_name }}" class="form-control-premium" readonly style="opacity: 0.8; cursor: default;">
+                            </div>
+
+                            <div class="form-group mb-3">
+                                <label>Emergency Contact</label>
+                                <input type="text" value="{{ $employee?->emergency_no }} @if($employee?->emergency_relationship) ({{ $employee->emergency_relationship }}) @endif" class="form-control-premium" readonly style="opacity: 0.8; cursor: default;">
+                            </div>
+
+                            <div class="form-group mb-3">
+                                <label>Address</label>
+                                <input type="text" value="{{ $employee?->address }}" class="form-control-premium" readonly style="opacity: 0.8; cursor: default;">
+                            </div>
                         </div>
 
                         <!-- Work Schedule -->
