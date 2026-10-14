@@ -36,10 +36,26 @@ class AttendanceStatusResolver
         }
 
         if ($attendance && $attendance->check_in) {
-            return $this->buildActiveShift($attendance, $breakStats, $timezone, $now);
+            return $this->withActivePulse($this->buildActiveShift($attendance, $breakStats, $timezone, $now));
         }
 
         return $this->buildNonAttendanceDay($employee, $shiftDate, $timezone);
+    }
+
+    /**
+     * The checked-out and no-attendance results carry the "pulse" fields the dashboard reads
+     * (pulse_line, pulse_class, dot_class, is_online); the active-shift ones did not, which
+     * made the dashboard fail as soon as anyone was checked in and not yet checked out.
+     */
+    private function withActivePulse(array $presence): array
+    {
+        $pulse = match ($presence['code'] ?? null) {
+            self::BREAK_EXCEEDED => ['pulse_line' => 'Break time exceeded', 'pulse_class' => 'text-danger'],
+            self::ON_BREAK => ['pulse_line' => 'On break', 'pulse_class' => 'text-warning'],
+            default => ['pulse_line' => 'Working', 'pulse_class' => 'text-success'],
+        };
+
+        return $presence + $pulse + ['dot_class' => 'dot-online', 'is_online' => true];
     }
 
     private function buildCheckedOut(Attendance $attendance, string $timezone): array

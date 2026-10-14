@@ -273,6 +273,7 @@
                     </li>
                 @endcan
 
+                @if (\Illuminate\Support\Facades\Route::has('admin.device_punches.index'))
                 @can('view-activity-logs')
                     <li>
                         <a href="{{ route('admin.device_punches.index') }}"
@@ -281,6 +282,7 @@
                         </a>
                     </li>
                 @endcan
+                @endif
 
                 @can('manage-app-settings')
                     <li>
