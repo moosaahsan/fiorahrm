@@ -273,6 +273,15 @@
                     </li>
                 @endcan
 
+                @can('view-activity-logs')
+                    <li>
+                        <a href="{{ route('admin.device_punches.index') }}"
+                            class="waves-effect {{ request()->is('admin/device-punches') ? 'mm active' : '' }}">
+                            <i class="mdi mdi-fingerprint"></i> <span> Device Scans </span>
+                        </a>
+                    </li>
+                @endcan
+
                 @can('manage-app-settings')
                     <li>
                         <a href="/admin/app_settings"

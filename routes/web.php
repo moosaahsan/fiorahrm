@@ -59,6 +59,11 @@ Route::middleware(['auth', 'is_admin'])->prefix('admin')->group(function () {
     Route::get('/attendance/all/{year?}', [AdminAttendanceController::class, 'getAttendanceForAllEmployeesWithMidnightShiftHandling']);
     Route::get('/attendance/employee/{empId}/{year?}', [AdminAttendanceController::class, 'getAttendanceForSpecificEmployeeWithMidnightShiftHandling']);
 
+    // Fingerprint device scans forwarded by the device bridge
+    Route::middleware('permission:view-activity-logs')->group(function () {
+        Route::get('/device-punches', [\App\Http\Controllers\Admin\DevicePunchLogController::class, 'index'])->name('admin.device_punches.index');
+    });
+
     // App Settings
     Route::middleware('permission:manage-app-settings')->group(function () {
         Route::get('/app_settings', [AppSettingsController::class, 'index'])->name('app_settings.index');

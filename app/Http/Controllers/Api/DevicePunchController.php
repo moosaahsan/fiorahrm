@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Models\DevicePunchLog;
 use App\Models\Employee;
 use App\Services\LateArrivalService;
 use Carbon\Carbon;
@@ -17,6 +18,9 @@ use Illuminate\Support\Facades\Log;
  * Not user-authenticated — the bridge is a machine on the local network,
  * not a logged-in person — so it's protected by a shared secret header
  * instead of a Sanctum token.
+ *
+ * Every scan (accepted or rejected) is also written to device_punch_logs so
+ * it can be reviewed on the admin "Device Scans" page.
  */
 class DevicePunchController extends BaseController
 {
@@ -40,23 +44,44 @@ class DevicePunchController extends BaseController
             // When the finger was really placed on the device, in the app's timezone.
             // Optional: without it the punch is recorded at the moment it arrives.
             'punched_at' => 'nullable|date_format:Y-m-d H:i:s',
+            // The name stored on the device for this user, and whether the bridge is
+            // forwarding the scan live or catching up on an old one. Only used for the log.
+            'device_user_name' => 'nullable|string|max:255',
+            'source' => 'nullable|in:live,catch-up',
         ]);
 
-        $employee = Employee::where('device_user_id', $validated['device_user_id'])->first();
-        if (!$employee) {
-            return $this->sendError("No employee is mapped to device user id '{$validated['device_user_id']}'.", [], 404);
+        $timezone = get_app_settings('app_timezone') ?? 'Asia/Karachi';
+        $at = !empty($validated['punched_at'])
+            ? Carbon::createFromFormat('Y-m-d H:i:s', $validated['punched_at'], $timezone)
+            : null;
+
+        [$status, $message, $employee] = $this->process($validated, $at, $timezone);
+
+        $this->writeLog($validated, $at ?? Carbon::now($timezone), $employee, $status === 200, $message);
+
+        if ($status === 200) {
+            return $this->sendResponse(['employee' => $employee->name], $message);
         }
 
-        $at = null;
-        if (!empty($validated['punched_at'])) {
-            $timezone = get_app_settings('app_timezone') ?? 'Asia/Karachi';
-            $at = Carbon::createFromFormat('Y-m-d H:i:s', $validated['punched_at'], $timezone);
+        return $this->sendError($message, $employee ? ['employee' => $employee->name] : [], $status);
+    }
 
+    /**
+     * Applies the scan. Returns [http status, message, employee|null].
+     */
+    private function process(array $validated, ?Carbon $at, string $timezone): array
+    {
+        $employee = Employee::where('device_user_id', $validated['device_user_id'])->first();
+        if (!$employee) {
+            return [404, "No employee is mapped to device user id '{$validated['device_user_id']}'.", null];
+        }
+
+        if ($at) {
             if ($at->gt(Carbon::now($timezone)->addMinutes(5))) {
-                return $this->sendError('Punch time is in the future (check the device clock).', ['employee' => $employee->name], 422);
+                return [422, 'Punch time is in the future (check the device clock).', $employee];
             }
             if ($at->lt(Carbon::now($timezone)->subDays(self::MAX_PUNCH_AGE_DAYS))) {
-                return $this->sendError('Punch is too old to be recorded automatically.', ['employee' => $employee->name], 422);
+                return [422, 'Punch is too old to be recorded automatically.', $employee];
             }
         }
 
@@ -75,9 +100,7 @@ class DevicePunchController extends BaseController
                 $data = $this->lateArrivalService->performCheckOut($employee->id, $at, $skipShiftRules);
             }
 
-            return $this->sendResponse([
-                'employee' => $employee->name,
-            ], $data['message'] ?? 'Punch recorded.');
+            return [200, $data['message'] ?? 'Punch recorded.', $employee];
         } catch (\Exception $e) {
             // Expected on repeat scans (device fires live events for every
             // touch, not just new ones) — e.g. "Already checked in for this
@@ -87,7 +110,40 @@ class DevicePunchController extends BaseController
                 'employee_id' => $employee->id,
                 'device' => $validated['device'],
             ]);
-            return $this->sendError($e->getMessage(), ['employee' => $employee->name], 422);
+
+            return [422, $e->getMessage(), $employee];
+        }
+    }
+
+    /**
+     * Keeps one row per physical scan. A scan that was already recorded successfully is never
+     * downgraded by a later "Already checked in" reply when the bridge re-sends it.
+     * A logging problem must never stop the punch itself, so failures are only logged.
+     */
+    private function writeLog(array $validated, Carbon $scanTime, ?Employee $employee, bool $ok, string $message): void
+    {
+        try {
+            $key = [
+                'device' => $validated['device'],
+                'device_user_id' => $validated['device_user_id'],
+                'scan_time' => $scanTime->format('Y-m-d H:i:s'),
+            ];
+
+            $existing = DevicePunchLog::where($key)->first();
+            if ($existing && $existing->ok) {
+                return;
+            }
+
+            DevicePunchLog::updateOrCreate($key, [
+                'device_user_name' => $validated['device_user_name'] ?? ($existing->device_user_name ?? null),
+                'employee_id' => $employee?->id,
+                'employee_name' => $employee?->name,
+                'ok' => $ok,
+                'result' => mb_substr($message, 0, 500),
+                'source' => $validated['source'] ?? 'live',
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Could not write device punch log: ' . $e->getMessage());
         }
     }
 }
