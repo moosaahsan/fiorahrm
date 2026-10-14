@@ -81,7 +81,11 @@ class LateArrivalService
         }
     }
 
-    public function performCheckIn($employeeId, $lateReason = null)
+    /**
+     * @param Carbon|null $at When the check-in really happened (e.g. a fingerprint scan
+     *                        delivered late). Defaults to "now" like the employee app.
+     */
+    public function performCheckIn($employeeId, $lateReason = null, ?Carbon $at = null)
     {
         $employee = Employee::findOrFail($employeeId);
 
@@ -96,10 +100,10 @@ class LateArrivalService
         }
 
         $shift = $shiftAssignment->shift;
-        $bounds = resolve_shift_bounds($shiftAssignment);
+        $bounds = resolve_shift_bounds($shiftAssignment, null, $at);
         $timezone = $bounds['timezone'];
-        $now = Carbon::now($timezone);
-        $today = Carbon::today($timezone);
+        $now = $at ? $at->copy()->setTimezone($timezone) : Carbon::now($timezone);
+        $today = $now->copy()->startOfDay();
         $referenceDate = $bounds['reference_date'];
         $shiftStart = $bounds['start'];
         $shiftEnd = $bounds['end'];
@@ -254,7 +258,7 @@ class LateArrivalService
     }
 
 
-    public function performCheckOut($employeeId)
+    public function performCheckOut($employeeId, ?Carbon $at = null)
     {
         $now = Carbon::now('Asia/Karachi');
 
@@ -272,9 +276,9 @@ class LateArrivalService
 
         $shift = $shiftAssignment->shift;
 
-        $bounds = resolve_shift_bounds($shiftAssignment);
+        $bounds = resolve_shift_bounds($shiftAssignment, null, $at);
         $timezone = $bounds['timezone'];
-        $now = Carbon::now($timezone);
+        $now = $at ? $at->copy()->setTimezone($timezone) : Carbon::now($timezone);
         $referenceDate = $bounds['reference_date'];
         $shiftStart = $bounds['start'];
         $shiftEnd = $bounds['end'];
@@ -305,8 +309,9 @@ class LateArrivalService
         }
 
         // Update attendance
+        // Worked hours are derived from check_in/check_out when displayed; there is no
+        // working_minutes column on attendances.
         $attendance->check_out = $now;
-        $attendance->working_minutes = $attendance->check_in->diffInMinutes($now);
         $attendance->updated_at = $now;
         $attendance->save();
 

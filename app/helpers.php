@@ -526,15 +526,16 @@ if (!function_exists('resolve_shift_date')) {
      * Resolve the shift date for a given employee shift.
      * This handles night shifts and provides a grace period for early/late check-ins.
      */
-    function resolve_shift_date($employeeShift)
+    function resolve_shift_date($employeeShift, ?Carbon $at = null)
     {
         if (!$employeeShift || !$employeeShift->shift) {
-            return now()->toDateString();
+            return ($at ?? now())->toDateString();
         }
 
         $shift = $employeeShift->shift;
         $timezone = get_app_settings('app_timezone') ?? 'Asia/Karachi';
-        $now = Carbon::now($timezone);
+        // $at lets a past moment (e.g. a fingerprint scan sent late) be resolved as if it were "now".
+        $now = $at ? $at->copy()->setTimezone($timezone) : Carbon::now($timezone);
 
         $today = $now->copy()->startOfDay();
         $yesterday = $today->copy()->subDay();
@@ -588,11 +589,11 @@ if (!function_exists('resolve_shift_bounds')) {
     /**
      * Resolve shift start/end datetimes for an employee assignment.
      */
-    function resolve_shift_bounds($employeeShift, ?string $referenceDate = null): array
+    function resolve_shift_bounds($employeeShift, ?string $referenceDate = null, ?Carbon $at = null): array
     {
         if (!$employeeShift || !$employeeShift->shift) {
             $timezone = get_app_settings('app_timezone') ?? 'Asia/Karachi';
-            $now = Carbon::now($timezone);
+            $now = $at ? $at->copy()->setTimezone($timezone) : Carbon::now($timezone);
 
             return [
                 'reference_date' => $now->toDateString(),
@@ -608,7 +609,7 @@ if (!function_exists('resolve_shift_bounds')) {
             ?? get_app_settings('app_timezone')
             ?? 'Asia/Karachi';
 
-        $referenceDate = $referenceDate ?? resolve_shift_date($employeeShift);
+        $referenceDate = $referenceDate ?? resolve_shift_date($employeeShift, $at);
 
         $shiftStart = Carbon::parse($referenceDate . ' ' . $shift->start_time, $timezone);
         $shiftEnd = Carbon::parse($referenceDate . ' ' . $shift->end_time, $timezone);

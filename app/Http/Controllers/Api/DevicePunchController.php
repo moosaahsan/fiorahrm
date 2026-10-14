@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Models\Employee;
 use App\Services\LateArrivalService;
+use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
@@ -19,6 +20,9 @@ use Illuminate\Support\Facades\Log;
  */
 class DevicePunchController extends BaseController
 {
+    /** Scans older than this are refused instead of being back-filled. */
+    private const MAX_PUNCH_AGE_DAYS = 7;
+
     public function __construct(private LateArrivalService $lateArrivalService)
     {
     }
@@ -33,6 +37,9 @@ class DevicePunchController extends BaseController
         $validated = $request->validate([
             'device' => 'required|in:IN,OUT',
             'device_user_id' => 'required|string',
+            // When the finger was really placed on the device, in the app's timezone.
+            // Optional: without it the punch is recorded at the moment it arrives.
+            'punched_at' => 'nullable|date_format:Y-m-d H:i:s',
         ]);
 
         $employee = Employee::where('device_user_id', $validated['device_user_id'])->first();
@@ -40,11 +47,26 @@ class DevicePunchController extends BaseController
             return $this->sendError("No employee is mapped to device user id '{$validated['device_user_id']}'.", [], 404);
         }
 
+        $at = null;
+        if (!empty($validated['punched_at'])) {
+            $timezone = get_app_settings('app_timezone') ?? 'Asia/Karachi';
+            $at = Carbon::createFromFormat('Y-m-d H:i:s', $validated['punched_at'], $timezone);
+
+            if ($at->gt(Carbon::now($timezone)->addMinutes(5))) {
+                return $this->sendError('Punch time is in the future (check the device clock).', ['employee' => $employee->name], 422);
+            }
+            if ($at->lt(Carbon::now($timezone)->subDays(self::MAX_PUNCH_AGE_DAYS))) {
+                return $this->sendError('Punch is too old to be recorded automatically.', ['employee' => $employee->name], 422);
+            }
+        }
+
         try {
             if ($validated['device'] === 'IN') {
-                $data = $this->lateArrivalService->performCheckIn($employee->id);
+                // A fingerprint device has no way to type a reason, and a late check-in is
+                // rejected without one, so late scans get this default reason.
+                $data = $this->lateArrivalService->performCheckIn($employee->id, 'Marked via fingerprint device', $at);
             } else {
-                $data = $this->lateArrivalService->performCheckOut($employee->id);
+                $data = $this->lateArrivalService->performCheckOut($employee->id, $at);
             }
 
             return $this->sendResponse([
