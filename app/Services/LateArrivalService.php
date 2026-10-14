@@ -84,8 +84,11 @@ class LateArrivalService
     /**
      * @param Carbon|null $at When the check-in really happened (e.g. a fingerprint scan
      *                        delivered late). Defaults to "now" like the employee app.
+     * @param bool $skipShiftRules Record the check-in exactly when it happened, ignoring the
+     *                        shift window, off days and late/half-day marking. Used for staff
+     *                        whose real shift has not been assigned yet.
      */
-    public function performCheckIn($employeeId, $lateReason = null, ?Carbon $at = null)
+    public function performCheckIn($employeeId, $lateReason = null, ?Carbon $at = null, bool $skipShiftRules = false)
     {
         $employee = Employee::findOrFail($employeeId);
 
@@ -104,31 +107,34 @@ class LateArrivalService
         $timezone = $bounds['timezone'];
         $now = $at ? $at->copy()->setTimezone($timezone) : Carbon::now($timezone);
         $today = $now->copy()->startOfDay();
-        $referenceDate = $bounds['reference_date'];
+        // Without a real shift the attendance simply belongs to the day of the scan.
+        $referenceDate = $skipShiftRules ? $now->toDateString() : $bounds['reference_date'];
         $shiftStart = $bounds['start'];
         $shiftEnd = $bounds['end'];
         $checkInDeadline = resolve_check_in_deadline($shiftAssignment, $referenceDate);
-        
+
         // Prevent check-in before joining date
         if ($employee->joining_date && $today->lt(Carbon::parse($employee->joining_date)->startOfDay())) {
             throw new \Exception('Your joining date is ' . Carbon::parse($employee->joining_date)->format('F j, Y') . '. You cannot check-in before that.');
         }
 
-        // Check if today is a company off day (weekend or holiday) for this team
-        if (CompanyOffDay::isOffDay($referenceDate, null, $employee->team_id)) {
-            $offDay = CompanyOffDay::getOffDay($referenceDate, null, $employee->team_id);
-            throw new \Exception('Today is an off day: ' . ($offDay->note ?? 'Holiday/Off Day'));
-        }
+        if (!$skipShiftRules) {
+            // Check if today is a company off day (weekend or holiday) for this team
+            if (CompanyOffDay::isOffDay($referenceDate, null, $employee->team_id)) {
+                $offDay = CompanyOffDay::getOffDay($referenceDate, null, $employee->team_id);
+                throw new \Exception('Today is an off day: ' . ($offDay->note ?? 'Holiday/Off Day'));
+            }
 
-        // Prevent check-in before 1 hour of shift start
-        $checkInWindowStart = $shiftStart->copy()->subHour();
-        if ($now->lt($checkInWindowStart)) {
-            throw new \Exception('You can only check in 1 hour before your shift starts.');
-        }
+            // Prevent check-in before 1 hour of shift start
+            $checkInWindowStart = $shiftStart->copy()->subHour();
+            if ($now->lt($checkInWindowStart)) {
+                throw new \Exception('You can only check in 1 hour before your shift starts.');
+            }
 
-        // Allow late / half-day check-in until shift end + grace window
-        if ($now->gt($checkInDeadline)) {
-            throw new \Exception('Your shift has already ended. You cannot check in anymore.');
+            // Allow late / half-day check-in until shift end + grace window
+            if ($now->gt($checkInDeadline)) {
+                throw new \Exception('Your shift has already ended. You cannot check in anymore.');
+            }
         }
 
         // Check for existing attendance
@@ -164,7 +170,7 @@ class LateArrivalService
         $gracePeriod = (int) (get_employee_settings($employeeId, 'late_grace_minutes') ?? 5);
         $halfDayThreshold = (int) (get_employee_settings($employeeId, 'mark_half_day_after') ?? 120);
 
-        $lateMinutes = $now->gt($shiftStart->copy()->addMinutes($gracePeriod)) ? $shiftStart->diffInMinutes($now) : 0;
+        $lateMinutes = (!$skipShiftRules && $now->gt($shiftStart->copy()->addMinutes($gracePeriod))) ? $shiftStart->diffInMinutes($now) : 0;
 
         // Require late_reason if late or half-day (mirroring API)
         if ($lateMinutes > 0 && empty($lateReason)) {
@@ -258,7 +264,12 @@ class LateArrivalService
     }
 
 
-    public function performCheckOut($employeeId, ?Carbon $at = null)
+    /**
+     * @param bool $skipShiftRules Match the check-out to the employee's latest open check-in
+     *                        (within 24h) and ignore the shift end window. Used for staff
+     *                        whose real shift has not been assigned yet.
+     */
+    public function performCheckOut($employeeId, ?Carbon $at = null, bool $skipShiftRules = false)
     {
         $now = Carbon::now('Asia/Karachi');
 
@@ -284,10 +295,25 @@ class LateArrivalService
         $shiftEnd = $bounds['end'];
 
         // Fetch today's attendance
-        $attendance = Attendance::where('emp_id', $employeeId)
-            ->where('shift_id', $shift->id)
-            ->whereDate('shift_date', $referenceDate)
-            ->first();
+        if ($skipShiftRules) {
+            $windowStart = $now->copy()->subHours(24);
+            $attendance = Attendance::where('emp_id', $employeeId)
+                ->whereNotNull('check_in')
+                ->whereBetween('check_in', [$windowStart, $now])
+                ->orderByDesc('check_in')
+                ->get()
+                ->first(fn ($a) => !$a->check_out) // latest still-open check-in
+                ?? Attendance::where('emp_id', $employeeId)
+                    ->whereNotNull('check_in')
+                    ->whereBetween('check_in', [$windowStart, $now])
+                    ->orderByDesc('check_in')
+                    ->first();
+        } else {
+            $attendance = Attendance::where('emp_id', $employeeId)
+                ->where('shift_id', $shift->id)
+                ->whereDate('shift_date', $referenceDate)
+                ->first();
+        }
 
         if (!$attendance || !$attendance->check_in) {
             throw new \Exception('Check-in not found for this shift.');
@@ -304,7 +330,7 @@ class LateArrivalService
 
         // Do not allow check-out past shift end + 1 hour (grace)
         $graceEnd = $shiftEnd->copy()->addHour();
-        if ($now->gt($graceEnd)) {
+        if (!$skipShiftRules && $now->gt($graceEnd)) {
             throw new \Exception('Check-out window has expired.');
         }
 

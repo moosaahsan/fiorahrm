@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Models\Employee;
+use App\Models\EmployeeShift;
 use App\Services\LateArrivalService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -25,6 +26,25 @@ class DevicePunchController extends BaseController
 
     public function __construct(private LateArrivalService $lateArrivalService)
     {
+    }
+
+    /**
+     * True while the employee still has only the shift row created when they were added
+     * (a single assignment that has never been changed). As soon as HR assigns a shift
+     * (new assignment) or saves the employee's schedule (row is updated) this turns false
+     * and the normal shift rules apply.
+     */
+    private function hasOnlyDefaultShift(Employee $employee): bool
+    {
+        $assignments = EmployeeShift::where('emp_id', $employee->id)->get();
+        if ($assignments->count() !== 1) {
+            return false;
+        }
+
+        $row = $assignments->first();
+
+        return $row->created_at && $row->updated_at
+            && $row->updated_at->equalTo($row->created_at);
     }
 
     public function store(Request $request)
@@ -60,13 +80,18 @@ class DevicePunchController extends BaseController
             }
         }
 
+        // Until HR gives an employee a real shift, the shift on file is just the default from
+        // the employee import, so late/half-day/window rules would be judged against a
+        // wrong schedule. Such scans are recorded as plain check-in/check-out times.
+        $skipShiftRules = $this->hasOnlyDefaultShift($employee);
+
         try {
             if ($validated['device'] === 'IN') {
                 // A fingerprint device has no way to type a reason, and a late check-in is
                 // rejected without one, so late scans get this default reason.
-                $data = $this->lateArrivalService->performCheckIn($employee->id, 'Marked via fingerprint device', $at);
+                $data = $this->lateArrivalService->performCheckIn($employee->id, 'Marked via fingerprint device', $at, $skipShiftRules);
             } else {
-                $data = $this->lateArrivalService->performCheckOut($employee->id, $at);
+                $data = $this->lateArrivalService->performCheckOut($employee->id, $at, $skipShiftRules);
             }
 
             return $this->sendResponse([
