@@ -37,6 +37,10 @@ return [
 
     'device_bridge' => [
         'secret' => env('DEVICE_BRIDGE_SECRET'),
+        // While false (default) a fingerprint scan is stored as a plain check-in/check-out
+        // time: no shift window, late or half-day. Set DEVICE_BRIDGE_ENFORCE_SHIFT_RULES=true
+        // once every employee has their real shift assigned.
+        'enforce_shift_rules' => (bool) env('DEVICE_BRIDGE_ENFORCE_SHIFT_RULES', false),
     ],
 
 ];
